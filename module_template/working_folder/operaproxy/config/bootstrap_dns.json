@@ -1,4 +1,5 @@
 [
+    "tls://dns.geohide.ru",
     "https://xbox-dns.ru/dns-query",
     "tls://9.9.9.9:853",
     "https://ru-mow.doh.sb/dns-query",

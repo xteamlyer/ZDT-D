@@ -324,7 +324,7 @@ pub fn start_if_enabled() -> Result<()> {
 
     // 1) Start byedpi (initial) only if at least one SNI entry requests it.
     let mut byedpi_bin_opt: Option<PathBuf> = None;
-    let bye_log = log_dir.join("bye_opera.log");
+    let bye_log = log_dir.join("/dev/null");
     let mut byedpi_start_pid: Option<u32> = None;
     if any_uses_byedpi {
         let byedpi_bin = find_bin("byedpi")?;
@@ -697,9 +697,9 @@ fn spawn_opera_proxy(
     let mut cmd = Command::new(bin);
     cmd.arg("-bind-address")
         .arg(bind)
+        .arg("-proxy-bypass-file")
+        .arg("/data/adb/modules/ZDT-D/working_folder/operaproxy/config/bypass.txt")
         .arg("-socks-mode")
-        .arg("-cafile")
-        .arg(OPERA_CAFILE)
         .arg("-fake-SNI")
         .arg(fake_sni)
         .arg("-bootstrap-dns")

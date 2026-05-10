@@ -5,5 +5,5 @@
   "server_selection": "fastest",
   "server_selection_dl_limit": 204800,
   "server_selection_test_url": "https://ajax.googleapis.com/ajax/libs/angularjs/1.8.2/angular.min.js",
-  "verbosity": 50
+  "verbosity": 60
 }
