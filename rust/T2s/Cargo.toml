@@ -7,7 +7,7 @@ edition = "2021"
 anyhow = "1"
 bytes = "1"
 clap = { version = "4.5", features = ["derive"] }
-axum = { version = "0.7", features = ["macros", "ws"] }
+axum = { version = "0.8", features = ["macros", "ws"] }
 tokio = { version = "1.39", features = ["rt-multi-thread", "macros", "net", "io-util", "time", "signal", "sync", "fs"] }
 # Note: tokio-util does not have a "sync" feature; CancellationToken lives in tokio_util::sync.
 tokio-util = "0.7"
@@ -17,8 +17,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 parking_lot = "0.12"
 regex = "1"
-rand = "0.8"
-socket2 = "0.5"
+rand = "0.10"
+socket2 = "0.6"
 libc = "0.2"
 futures = "0.3"
 once_cell = "1"

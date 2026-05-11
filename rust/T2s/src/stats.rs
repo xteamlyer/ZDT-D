@@ -2,7 +2,7 @@ use crate::cli::{Args, BackendMode};
 use crate::socks5::TargetAddr;
 use anyhow::{anyhow, Context, Result};
 use parking_lot::Mutex;
-use rand::RngCore;
+use rand::Rng;
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
@@ -1586,7 +1586,7 @@ pub fn now_ms() -> u64 {
 }
 
 fn rand_u64() -> u64 {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     rng.next_u64()
 }
 
