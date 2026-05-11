@@ -97,7 +97,7 @@ fn start_profile(profile_name: &str, tracker: &Sha256Tracker) -> Result<()> {
     // Spawn byedpi/ciadpi
     let log_dir = profile_dir.join("log");
     fs::create_dir_all(&log_dir).with_context(|| format!("mkdir {}", log_dir.display()))?;
-    let log_path = log_dir.join("byedpi.log");
+    let log_path = log_dir.join("/dev/null");
 
     let bin = find_byedpi_bin().with_context(|| "byedpi binary not found in /data/adb/modules/ZDT-D/bin")?;
     crate::logging::user_info(&format!("byedpi[{profile_name}]: запуск"));
