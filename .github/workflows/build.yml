@@ -14,9 +14,9 @@ on:
           - Release
 
 env:
-  ANDROID_API_LEVEL: 34
-  ANDROID_BUILD_TOOLS_VERSION: "34.0.0"
-  GRADLE_VERSION: "8.2"
+  ANDROID_API_LEVEL: 36
+  ANDROID_BUILD_TOOLS_VERSION: "36.0.0"
+  GRADLE_VERSION: "9.5.0"
   CARGO_PROFILE: release
   CARGO_BUILD_TARGET: aarch64-linux-android
   BUILD_TYPE: ${{ github.event.inputs.build_type || 'Release' }}
@@ -36,48 +36,38 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Read version from module.prop
+      - name: Read version and generate timestamp tag
         id: version
         run: |
           VERSION_CODE=$(grep -m1 '^versionCode=' module.prop | cut -d'=' -f2 | tr -d '[:space:]')
           VERSION_NAME=$(grep -m1 '^version=' module.prop | cut -d'=' -f2 | tr -d '[:space:]')
 
           if [[ -z "$VERSION_CODE" ]]; then
-            echo "::error::versionCode dont found in module.prop"
+            echo "::error::versionCode not found in module.prop"
             exit 1
           fi
 
-          if [[ -n "$VERSION_NAME" ]]; then
-            TAG="v${VERSION_NAME}-build${VERSION_CODE}"
-          else
-            TAG="v${VERSION_CODE}"
-          fi
+          # Timestamp tag: YYYYMMDDHHMM (UTC)
+          TAG=$(date -u '+%Y%m%d%H%M')
 
-          echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
-          echo "version_name=$VERSION_NAME"  >> $GITHUB_OUTPUT
-          echo "tag=$TAG"                    >> $GITHUB_OUTPUT
+          # Last commit message (first line only)
+          COMMIT_MSG=$(git log -1 --pretty=format:'%s')
+
+          echo "version_code=$VERSION_CODE"   >> $GITHUB_OUTPUT
+          echo "version_name=$VERSION_NAME"   >> $GITHUB_OUTPUT
+          echo "tag=$TAG"                     >> $GITHUB_OUTPUT
+          echo "commit_msg=$COMMIT_MSG"        >> $GITHUB_OUTPUT
           echo "Version: code=$VERSION_CODE name=$VERSION_NAME → tag=$TAG"
-
-      - name: Check existing tag
-        id: tag_check
-        run: |
-          TAG="${{ steps.version.outputs.tag }}"
-          if git ls-remote --tags origin "refs/tags/$TAG" | grep -q "$TAG"; then
-            echo "exists=true"  >> $GITHUB_OUTPUT
-            echo "Tag $TAG already exist — recreate"
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-            echo "New tag $TAG."
-          fi
+          echo "Commit: $COMMIT_MSG"
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Install Android SDK packages
         run: |
@@ -104,13 +94,13 @@ jobs:
           EOF
 
       - name: Setup Gradle ${{ env.GRADLE_VERSION }}
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: ${{ env.GRADLE_VERSION }}
           cache-read-only: false
 
       - name: Cache Cargo registry & build
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -122,16 +112,22 @@ jobs:
 
       - name: Check prebuilt binaries
         run: |
-          REQUIRED=(byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box wireproxy torproxy lyrebird tun2socks openvpn mihomo amneziawg-go awg)
-          MISSING=()
-          for bin in "${REQUIRED[@]}"; do
-            [[ -f "prebuilt/bin/arm64-v8a/$bin" ]] || MISSING+=("$bin")
-          done
-          if [[ ${#MISSING[@]} -gt 0 ]]; then
-            echo "::error::Binaries doesn't exist: ${MISSING[*]}"
+          PREBUILT="prebuilt/bin/arm64-v8a"
+
+          if [[ ! -d "$PREBUILT" ]]; then
+            echo "::error::Directory $PREBUILT does not exist"
             exit 1
           fi
-          echo "All binaries found"
+
+          # Count all regular files in the directory
+          COUNT=$(find "$PREBUILT" -maxdepth 1 -type f | wc -l)
+          if [[ "$COUNT" -eq 0 ]]; then
+            echo "::error::No binaries found in $PREBUILT"
+            exit 1
+          fi
+
+          echo "Found $COUNT prebuilt binaries:"
+          find "$PREBUILT" -maxdepth 1 -type f -printf '  %f\n' | sort
 
       - name: Build zdtd (Rust, aarch64-linux-android)
         working-directory: rust/zdtd
@@ -199,9 +195,13 @@ jobs:
           cp -f "$CARGO_OUT/zdtd" "$MODULE_BUILD_DIR/bin/zdtd" && chmod 755 "$MODULE_BUILD_DIR/bin/zdtd"
           cp -f "$CARGO_OUT/t2s"  "$MODULE_BUILD_DIR/bin/t2s"  && chmod 755 "$MODULE_BUILD_DIR/bin/t2s"
 
-          for bin in byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box wireproxy torproxy lyrebird tun2socks openvpn mihomo amneziawg-go awg; do
-            cp -f "$PREBUILT/$bin" "$MODULE_BUILD_DIR/bin/$bin" && chmod 755 "$MODULE_BUILD_DIR/bin/$bin"
-          done
+          # Copy all prebuilt binaries dynamically instead of a hardcoded list
+          while IFS= read -r -d '' bin_path; do
+            bin_name=$(basename "$bin_path")
+            cp -f "$bin_path" "$MODULE_BUILD_DIR/bin/$bin_name"
+            chmod 755 "$MODULE_BUILD_DIR/bin/$bin_name"
+            echo "  + $bin_name"
+          done < <(find "$PREBUILT" -maxdepth 1 -type f -print0 | sort -z)
 
           pushd "$MODULE_BUILD_DIR" > /dev/null
           zip -qr "../../../$MODULE_ZIP" .
@@ -276,9 +276,31 @@ jobs:
 
           ls -lh out/dist/
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v7
+      - name: Create git tag
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Timestamp-based tags are always unique, so no need to delete old ones
+          git tag "$TAG"
+          git push origin "$TAG"
+          echo "Tag $TAG created on $(git rev-parse HEAD)"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
         with:
-          path: out/dist/app-release.apk
-          retention-days: 30
-          archive: false
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "ZDT-D ${{ steps.version.outputs.tag }}"
+          body: |
+            **Version:** `${{ steps.version.outputs.version_name }}` (code `${{ steps.version.outputs.version_code }}`)
+            **Commit:** `${{ steps.version.outputs.commit_msg }}`
+            **SHA:** `${{ github.sha }}`
+            **Branch:** `${{ github.ref_name }}`
+
+            Built automatically on push.
+          files: |
+            out/dist/app-release.apk
+            out/dist/zdt_module.zip
+          make_latest: true
