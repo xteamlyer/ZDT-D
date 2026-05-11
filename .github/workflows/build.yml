@@ -20,9 +20,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ANDROID_API_LEVEL: 34
-  ANDROID_BUILD_TOOLS_VERSION: "34.0.0"
-  GRADLE_VERSION: "8.2"
+  ANDROID_API_LEVEL: 36
+  ANDROID_BUILD_TOOLS_VERSION: "36.0.0"
+  GRADLE_VERSION: "9.5.0"
   CARGO_PROFILE: release
   CARGO_BUILD_TARGET: aarch64-linux-android
   BUILD_TYPE: ${{ github.event.inputs.build_type || 'Release' }}
@@ -80,13 +80,13 @@ jobs:
           fi
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Install Android SDK packages
         run: |
@@ -154,13 +154,13 @@ jobs:
           rustc -V
 
       - name: Setup Gradle ${{ env.GRADLE_VERSION }}
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: ${{ env.GRADLE_VERSION }}
           cache-read-only: false
 
       - name: Cache Cargo registry & build
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -172,16 +172,22 @@ jobs:
 
       - name: Check prebuilt binaries
         run: |
-          REQUIRED=(byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box mieru wireproxy torproxy lyrebird tun2socks openvpn mihomo amneziawg-go awg)
-          MISSING=()
-          for bin in "${REQUIRED[@]}"; do
-            [[ -f "prebuilt/bin/arm64-v8a/$bin" ]] || MISSING+=("$bin")
-          done
-          if [[ ${#MISSING[@]} -gt 0 ]]; then
-            echo "::error::Binaries doesn't exist: ${MISSING[*]}"
+          PREBUILT="prebuilt/bin/arm64-v8a"
+
+          if [[ ! -d "$PREBUILT" ]]; then
+            echo "::error::Directory $PREBUILT does not exist"
             exit 1
           fi
-          echo "All binaries found"
+
+          # Count all regular files in the directory
+          COUNT=$(find "$PREBUILT" -maxdepth 1 -type f | wc -l)
+          if [[ "$COUNT" -eq 0 ]]; then
+            echo "::error::No binaries found in $PREBUILT"
+            exit 1
+          fi
+
+          echo "Found $COUNT prebuilt binaries:"
+          find "$PREBUILT" -maxdepth 1 -type f -printf '  %f\n' | sort
 
       - name: Build zdtd (Rust, aarch64-linux-android)
         working-directory: rust/zdtd
@@ -249,9 +255,13 @@ jobs:
           cp -f "$CARGO_OUT/zdtd" "$MODULE_BUILD_DIR/bin/zdtd" && chmod 755 "$MODULE_BUILD_DIR/bin/zdtd"
           cp -f "$CARGO_OUT/t2s"  "$MODULE_BUILD_DIR/bin/t2s"  && chmod 755 "$MODULE_BUILD_DIR/bin/t2s"
 
-          for bin in byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box mieru wireproxy torproxy lyrebird tun2socks openvpn mihomo amneziawg-go awg; do
-            cp -f "$PREBUILT/$bin" "$MODULE_BUILD_DIR/bin/$bin" && chmod 755 "$MODULE_BUILD_DIR/bin/$bin"
-          done
+          # Copy all prebuilt binaries dynamically instead of a hardcoded list
+          while IFS= read -r -d '' bin_path; do
+            bin_name=$(basename "$bin_path")
+            cp -f "$bin_path" "$MODULE_BUILD_DIR/bin/$bin_name"
+            chmod 755 "$MODULE_BUILD_DIR/bin/$bin_name"
+            echo "  + $bin_name"
+          done < <(find "$PREBUILT" -maxdepth 1 -type f -print0 | sort -z)
 
           pushd "$MODULE_BUILD_DIR" > /dev/null
           zip -qr "../../../$MODULE_ZIP" .
