@@ -297,7 +297,7 @@ async fn ws_handle(mut socket: WebSocket, state: AppState) {
     let initial = build_state(&state);
     let initial_fp = state_fingerprint(&initial);
     if let Ok(txt) = serde_json::to_string(&initial) {
-        if socket.send(Message::Text(txt)).await.is_err() { return; }
+        if socket.send(Message::Text(txt.into())).await.is_err() { return; }
     }
     let mut last_sent = Instant::now();
     let mut last_fp: Option<u64> = Some(initial_fp);
@@ -310,7 +310,7 @@ async fn ws_handle(mut socket: WebSocket, state: AppState) {
                 let changed = last_fp.map(|prev| prev != fp).unwrap_or(true);
                 if changed || last_sent.elapsed() >= Duration::from_secs(30) {
                     if let Ok(txt) = serde_json::to_string(&st) {
-                        if socket.send(Message::Text(txt)).await.is_err() { break; }
+                        if socket.send(Message::Text(txt.into())).await.is_err() { break; }
                     }
                     last_sent = Instant::now();
                     last_fp = Some(fp);
@@ -328,7 +328,7 @@ async fn ws_handle(mut socket: WebSocket, state: AppState) {
                         let changed = last_fp.map(|prev| prev != fp).unwrap_or(true);
                         if changed {
                             if let Ok(txt) = serde_json::to_string(&st) {
-                                if socket.send(Message::Text(txt)).await.is_err() { break; }
+                                if socket.send(Message::Text(txt.into())).await.is_err() { break; }
                             }
                             last_sent = Instant::now();
                             last_fp = Some(fp);
