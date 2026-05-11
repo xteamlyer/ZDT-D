@@ -91,7 +91,7 @@ fn spawn_status_refresh(services_running: bool) {
         match res {
             Ok(Ok(report)) => {
                 let elapsed = started.elapsed();
-                if elapsed > Duration::from_millis(500) {
+                if elapsed > Duration::from_millis(5000) {
                     log::warn!("api status refresh slow: duration_ms={}", elapsed.as_millis());
                 }
                 store_status_cache(report);
@@ -5043,9 +5043,12 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
         }
         ("PUT", ["api", "programs", "operaproxy", "bootstrap_dns"]) => {
             let res = (|| -> Result<()> {
-                let arr: Vec<String> = serde_json::from_slice(body)
-                    .map_err(|e| anyhow::anyhow!("bad JSON body (expected array of strings): {e}"))?;
-                let clean: Vec<String> = arr.iter()
+                // saveText wraps content as {"content": "..."} — parse accordingly
+                let req: ContentReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let clean: Vec<String> = serde_json::from_str::<Vec<String>>(&req.content)
+                    .map_err(|e| anyhow::anyhow!("content is not a JSON array: {e}"))?
+                    .into_iter()
                     .map(|s| s.trim().to_string())
                     .filter(|s| !s.is_empty())
                     .collect();
@@ -5125,7 +5128,7 @@ fn handle_connection(mut stream: TcpStream, state: SharedState) -> Result<()> {
     impl Drop for SlowRequestGuard {
         fn drop(&mut self) {
             let elapsed = self.started.elapsed();
-            if elapsed > Duration::from_millis(500) {
+            if elapsed > Duration::from_millis(5000) {
                 log::warn!(
                     "api slow request: method={} path={} duration_ms={}",
                     self.method,
