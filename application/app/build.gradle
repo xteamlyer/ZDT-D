@@ -144,7 +144,7 @@ tasks.named('preBuild') {
 androidComponents {
   onVariants(selector().all()) { variant ->
     variant.outputs.forEach { output ->
-      output.outputFileName.set("ZDT-D-${variant.name}-v${variant.versionName}.apk")
+      output.outputFileName.set("ZDT-D-${variant.name}-v${moduleVersionCode}.apk")
     }
   }
 }
