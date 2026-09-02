@@ -1,9 +1,9 @@
 {
-  "api_proxy": "https://raw.githubusercontent.com/stormsia/proxy-list/main/working_proxies.txt",
-  "api_user_agent": "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36",
+  "api_proxy": "https://translate.yandex.ru/translate?url=https://raw.githubusercontent.com/proxifly/free-proxy-list/refs/heads/main/proxies/countries/US/data.txt&lang=de-de",
+  "api_user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Mobile Safari/537.36 OPR/99.0.0.0",
   "init_retry_interval": "3s",
   "server_selection": "fastest",
   "server_selection_dl_limit": 204800,
   "server_selection_test_url": "https://ajax.googleapis.com/ajax/libs/angularjs/1.8.2/angular.min.js",
-  "verbosity": 50
+  "verbosity": 60
 }
