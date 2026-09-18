@@ -467,7 +467,7 @@ pub fn start_if_enabled() -> Result<()> {
         let t2s_listen_addr = if hotspot_t2s { "0.0.0.0" } else { "127.0.0.1" };
 
         let t2s_bin = find_bin("t2s")?;
-        let t2s_log = log_dir.join("t2s.log");
+        let t2s_log = log_dir.join("/dev/null");
         truncate_file(&t2s_log)?;
 
         spawn_t2s_proxy(T2sSpawnConfig {
