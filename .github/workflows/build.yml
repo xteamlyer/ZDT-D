@@ -40,16 +40,16 @@ env:
   AMNEZIAWG_UAPI_RUN_DIR: "/data/adb/modules/ZDT-D/working_folder/amneziawg/run"
   AMNEZIAWG_UAPI_SOCKET_DIR: "/data/adb/modules/ZDT-D/working_folder/amneziawg/run/amneziawg"
   AMNEZIAWG_GO_UAPI_SOCKET_DIR: "run/amneziawg"
-  WIREPROXY_REF: "v1.1.2"
-  TUN2SOCKS_REF: "v2.6.0"
-  MIHOMO_REF: "v1.19.27"
-  SING_BOX_REF: "v1.13.14"
-  HYSTERIA_REF: "v2.10.0"
-  BYEDPI_REF: "v0.17.3"
+  WIREPROXY_REF: "master"
+  TUN2SOCKS_REF: "main"
+  MIHOMO_REF: "Alpha"
+  SING_BOX_REF: "testing"
+  HYSTERIA_REF: "v2.12.3"
+  BYEDPI_REF: "main"
   BYEDPI_ANDROID_API_LEVEL: 24
-  DNSCRYPT_PROXY_REF: "2.1.16"
-  MIERU_REF: "v3.34.0"
-  OPERA_PROXY_REF: "v1.26.0"
+  DNSCRYPT_PROXY_REF: "master"
+  MIERU_REF: "main"
+  OPERA_PROXY_REF: "master"
   DPITUNNEL_REF: "main"
   DPITUNNEL_ANDROID_API_LEVEL: 24
   DPITUNNEL_OPENSSL_REF: "openssl-3.3.2"
@@ -2463,7 +2463,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24.4'
+          go-version: '1.27'
           cache: false
 
       - name: Prepare Android SDK paths
@@ -2540,7 +2540,7 @@ jobs:
           mkdir -p "$SRC" "$ARTIFACT_DIR"
 
           echo "=== Fetch official dnscrypt-proxy source ==="
-          git clone --depth 1 --branch "$DNSCRYPT_PROXY_REF" https://github.com/DNSCrypt/dnscrypt-proxy "$SRC/dnscrypt-proxy"
+          git clone --depth 1 --branch "$DNSCRYPT_PROXY_REF" https://github.com/xteamlyer/dnscrypt-proxy "$SRC/dnscrypt-proxy"
           DNSCRYPT_PROXY_COMMIT="$(git -C "$SRC/dnscrypt-proxy" rev-parse HEAD)"
           printf '%s\n' "$DNSCRYPT_PROXY_COMMIT" | tee "$ARTIFACT_DIR/dnscrypt.commit"
 
@@ -2913,7 +2913,7 @@ jobs:
           mkdir -p "$SRC" "$ARTIFACT_DIR"
 
           echo "=== Fetch official opera-proxy source ==="
-          git clone --depth 1 --branch "$OPERA_PROXY_REF" https://github.com/Alexey71/opera-proxy "$SRC/opera-proxy"
+          git clone --depth 1 --branch "$OPERA_PROXY_REF" https://github.com/xteamlyer/opera-proxy "$SRC/opera-proxy"
           OPERA_PROXY_COMMIT="$(git -C "$SRC/opera-proxy" rev-parse HEAD)"
           printf '%s\n' "$OPERA_PROXY_COMMIT" | tee "$ARTIFACT_DIR/opera-proxy.commit"
 
@@ -3361,7 +3361,7 @@ jobs:
           echo "ZAPRET_REF=$ZAPRET_REF"
 
           echo "=== Fetch zapret $ZAPRET_REF ==="
-          git clone --depth 1 --branch "$ZAPRET_REF" https://github.com/bol-van/zapret.git "$SRC/zapret"
+          git clone --depth 1 --branch master https://github.com/bol-van/zapret.git "$SRC/zapret"
           ZAPRET_COMMIT="$(git -C "$SRC/zapret" rev-parse HEAD)"
           echo "$ZAPRET_REF" | tee "$ARTIFACT_DIR/zapret.ref"
           echo "$ZAPRET_COMMIT" | tee "$ARTIFACT_DIR/zapret.commit"
@@ -3630,7 +3630,7 @@ jobs:
           echo "ZAPRET2_REF=$ZAPRET2_REF"
 
           echo "=== Fetch zapret2 $ZAPRET2_REF ==="
-          git clone --depth 1 --branch "$ZAPRET2_REF" https://github.com/bol-van/zapret2.git "$SRC/zapret2"
+          git clone --depth 1 --branch master https://github.com/bol-van/zapret2.git "$SRC/zapret2"
           ZAPRET2_COMMIT="$(git -C "$SRC/zapret2" rev-parse HEAD)"
           echo "$ZAPRET2_REF" | tee "$ARTIFACT_DIR/zapret2.ref"
           echo "$ZAPRET2_COMMIT" | tee "$ARTIFACT_DIR/zapret2.commit"
