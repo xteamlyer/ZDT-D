@@ -481,6 +481,9 @@ pub fn start_if_enabled() -> Result<()> {
             profile: "main",
             scope: "program/operaproxy",
             log_path: &t2s_log,
+            // t2s at info level floods t2s.log with backend-pool chatter; keep
+            // this module's t2s quiet unless the user explicitly lowers the level.
+            log_level: Some("error"),
             ..Default::default()
         })?;
         info!(
