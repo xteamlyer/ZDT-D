@@ -123,6 +123,64 @@ fn write_routing_cache(items: &[RoutingSnapshot]) -> Result<()> {
     Ok(())
 }
 
+/// Delete the scoped iptables chains for every cached snapshot whose uid_file is
+/// one of uid_files, then drop those snapshots from the cache. This is the
+/// "undo" counterpart of refresh_routing_by_uid_file for a single module: it
+/// never touches snapshots belonging to other programs.
+pub fn cleanup_and_forget_routing_by_uid_files(uid_files: &[&str]) -> Result<()> {
+    if uid_files.is_empty() {
+        return Ok(());
+    }
+
+    let items = read_routing_cache();
+    let mut remaining: Vec<RoutingSnapshot> = Vec::with_capacity(items.len());
+    let mut removed = 0usize;
+
+    for snapshot in items {
+        let uid_file = snapshot.uid_file();
+        if uid_files.iter().any(|f| f == uid_file) {
+            removed += 1;
+            match &snapshot {
+                RoutingSnapshot::Nat { uid_file, dest_port, proto_choice, ifaces_raw, port_preference, dpi_ports } => {
+                    let proto = crate::iptables::iptables_port::ProtoChoice::from_str(proto_choice);
+                    let opt = crate::iptables::iptables_port::DpiTunnelOptions {
+                        port_preference: *port_preference,
+                        dpi_ports: dpi_ports.clone(),
+                    };
+                    if let Err(e) = crate::iptables::iptables_port::cleanup_scope(
+                        Path::new(uid_file), *dest_port, proto, ifaces_raw.as_deref(), &opt,
+                    ) {
+                        log::warn!("runtime_refresh: nat cleanup failed for {}: {e:#}", uid_file);
+                    }
+                }
+                RoutingSnapshot::Tproxy { uid_file, dest_port, proto_choice, ifaces_raw, port_preference, dpi_ports, .. } => {
+                    let proto = crate::iptables::iptables_port::ProtoChoice::from_str(proto_choice);
+                    let opt = crate::iptables::iptables_port::DpiTunnelOptions {
+                        port_preference: *port_preference,
+                        dpi_ports: dpi_ports.clone(),
+                    };
+                    if let Err(e) = crate::iptables::iptables_tproxy::cleanup_scope(
+                        Path::new(uid_file), *dest_port, proto, ifaces_raw.as_deref(), &opt,
+                    ) {
+                        log::warn!("runtime_refresh: tproxy cleanup failed for {}: {e:#}", uid_file);
+                    }
+                }
+                // NFQUEUE variants are not used by the t2s-based programs that
+                // support per-module restart; leave them untouched.
+                _ => {}
+            }
+        } else {
+            remaining.push(snapshot);
+        }
+    }
+
+    if removed > 0 {
+        write_routing_cache(&remaining)?;
+    }
+    log::info!("runtime_refresh: forgot {} routing snapshot(s) for module restart", removed);
+    Ok(())
+}
+
 fn register_snapshot(snapshot: RoutingSnapshot) {
     let mut items = read_routing_cache();
     items.retain(|item| !item.same_runtime_slot(&snapshot));

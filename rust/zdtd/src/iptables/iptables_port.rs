@@ -616,6 +616,27 @@ fn remove_nat_scoped_chain(chain: &str, parent: &str) -> Result<()> {
     Ok(())
 }
 
+/// Remove the scoped NAT chains created by apply() for one uid file.
+/// Counterpart of iptables_tproxy::cleanup_scope. Safe to call when no chain
+/// exists: the jump/flush/delete steps are best-effort.
+pub fn cleanup_scope(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_raw: Option<&str>, opt: &DpiTunnelOptions) -> Result<()> {
+    let scope = format!(
+        "nat:uid={}:dest={}:proto={:?}:ifaces={}:pref={}:ports={}",
+        uid_file.display(),
+        dest_port,
+        proto_choice,
+        ifaces_raw.unwrap_or(""),
+        opt.port_preference,
+        opt.dpi_ports,
+    );
+    let _xtables_guard = xtables_lock::lock();
+    remove_nat_scoped_chain(&scoped_nat_chain_name(&scope), "NAT_DPI")?;
+    // The local variant is only created while allow_loopback_redirect is on;
+    // deleting it when absent is a harmless no-op.
+    remove_nat_scoped_chain(&scoped_nat_chain_name(&format!("local:{scope}")), "NAT_DPI_LOCAL")?;
+    Ok(())
+}
+
 fn prepare_nat_local_scoped_chain(scope_label: &str) -> Result<String> {
     let chain = scoped_nat_chain_name(&format!("local:{scope_label}"));
     let (exists, _) = ipt_run_timeout(&["-t", "nat", "-nL", chain.as_str()], Capture::None, IPT_CMD_TIMEOUT)?;

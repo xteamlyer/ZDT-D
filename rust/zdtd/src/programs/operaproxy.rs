@@ -536,6 +536,75 @@ pub fn start_if_enabled() -> Result<()> {
     Ok(())
 }
 
+/// Stop only the opera-proxy module, leaving every other program running.
+///
+/// This is the stop half of the per-module hot-restart: it kills this module's
+/// t2s instance(s), its opera-proxy processes, its own byedpi listener and
+/// removes its routing rules from the shared cache. The start half is a plain
+/// start_if_enabled() call, which re-reads every config file from disk.
+pub fn stop_module() -> Result<()> {
+    use crate::module_restart::{
+        cleanup_stale_t2s_instance_files, kill_by_name, kill_pids, t2s_pids_for_program,
+    };
+
+    // Snapshot the current config before touching anything: port.json tells us
+    // which byedpi listener belongs to us.
+    let byedpi_port: u16 = read_json::<PortJson>(Path::new(PORT_JSON))
+        .map(|cfg| cfg.byedpi_port)
+        .unwrap_or(0);
+    let hotspot_owner = settings::load_api_settings()
+        .map(|s| s.hotspot_t2s_for_operaproxy())
+        .unwrap_or(false);
+
+    // 1) Remove this module's routing rules first so in-flight traffic is not
+    //    routed to listeners we are about to kill (same order as stop_full).
+    let uid_outs = [APP_OUT_USER, APP_OUT_MOBILE, APP_OUT_WIFI];
+    if let Err(e) = crate::runtime_refresh::cleanup_and_forget_routing_by_uid_files(&uid_outs) {
+        warn!("operaproxy: module routing cleanup failed: {e:#}");
+    }
+    if hotspot_owner {
+        // The hotspot redirect chain is shared; only touch it when this module
+        // is the configured hotspot target. A fresh start re-creates it if the
+        // setting is still enabled.
+        if let Err(e) = hotspot::cleanup() {
+            warn!("operaproxy: hotspot cleanup failed during module stop: {e:#}");
+        }
+    }
+
+    // 2) Kill this module's t2s instance(s). t2s is shared by many programs, so
+    //    match on the program label instead of killing every t2s process.
+    let t2s_pids = t2s_pids_for_program("operaproxy");
+    if !t2s_pids.is_empty() {
+        let _ = kill_pids("operaproxy t2s", &t2s_pids);
+    }
+
+    // 3) Kill opera-proxy instances. This binary is only ever launched by this
+    //    module, so a plain pidof match is safe here.
+    let _ = kill_by_name("opera-proxy");
+
+    // 4) Kill the module's byedpi listener, identified by its port so other
+    //    programs' byedpi processes are left untouched. byedpi is spawned with
+    //    -i 127.0.0.1 -p <port>, so a listener match is exact.
+    if byedpi_port != 0 {
+        let log_dir = Path::new(OPERA_ROOT).join("log");
+        let _ = fs::create_dir_all(&log_dir);
+        if let Ok(Some(pid_str)) = find_pid_by_listen_port(byedpi_port, &log_dir.join("module_stop_byedpi.log")) {
+            if let Ok(pid) = pid_str.parse::<i32>() {
+                if pid > 1 {
+                    let _ = kill_pids("operaproxy byedpi", &[pid]);
+                }
+            }
+        }
+    }
+
+    // 5) Remove the t2s instance metadata the killed processes cannot clean up
+    //    themselves (they only remove it on a graceful Ctrl+C shutdown).
+    cleanup_stale_t2s_instance_files("operaproxy");
+
+    info!("operaproxy: module stopped (t2s={} opera/byedpi cleaned)", t2s_pids.len());
+    Ok(())
+}
+
 /// Read the bootstrap DNS resolver list from config/bootstrap_dns.json.
 /// Returns a comma-separated string of resolver URLs.
 /// Falls back to DEFAULT_BOOTSTRAP_DNS if the file is missing, empty, or invalid.

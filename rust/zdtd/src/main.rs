@@ -15,6 +15,7 @@ mod idle;
 mod internet_wait;
 mod jsonfs;
 mod logging;
+mod module_restart;
 mod ports;
 mod power_mode;
 mod proxyinfo;

@@ -95,6 +95,7 @@ pub fn start_full() -> Result<()> {
     }
     crate::runtime_refresh::clear_routing_cache();
     crate::runtime_apply::clear();
+    crate::module_restart::clear();
 
     // Start dnscrypt first (must be before other programs).
         std::thread::spawn(|| {
@@ -259,6 +260,7 @@ if !any_main_service_running() {
     let stop_res = stop::stop_services();
     crate::runtime_refresh::clear_routing_cache();
     crate::runtime_apply::clear();
+    crate::module_restart::clear();
     crate::runtime_state::clear();
     let _ = shell::ok_sh(
         "settings delete global captive_portal_detection_enabled; \
@@ -355,6 +357,7 @@ pub fn stop_full() -> Result<()> {
     // Stop services first, but always try to restore captive portal settings even
     // if the stop sequence partially fails.
     let stop_res = stop::stop_services();
+    crate::module_restart::clear();
     crate::runtime_refresh::clear_routing_cache();
     crate::runtime_state::clear();
     let _ = shell::ok_sh(

@@ -586,6 +586,21 @@ fn refresh_apps_after_save_if_running(services_running: bool, program: &str, pro
     Ok(())
 }
 
+/// Restart a single module after its configuration was saved.
+///
+/// Only a config change that affects the module's running processes needs this;
+/// app-list saves go through refresh_apps_after_save_if_running (UID-only hot
+/// apply). While a full start/stop is in progress the request is skipped: the
+/// config is already on disk and is picked up by that start.
+fn restart_module_after_save_if_running(services_running: bool, busy: bool, program: &str) -> Result<()> {
+    if busy {
+        log::info!("api: skipping {program} module restart, full start/stop is in progress");
+        return Ok(());
+    }
+    let _ = crate::module_restart::schedule_restart(services_running, program);
+    Ok(())
+}
+
 #[derive(Debug, Deserialize, Serialize, Default)]
 struct ProfileState {
     // Legacy active.json files stored 0/1 here. Without the boolish reader serde fails the whole
@@ -3417,7 +3432,7 @@ fn handle_subscriptions_subroutes(stream: TcpStream, method: &str, path: &str, b
 }
 
 /// Handles subroutes under /api/programs/*
-fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, headers: &HashMap<String, String>, body: &[u8], services_running: bool) -> Result<()> {
+fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, headers: &HashMap<String, String>, body: &[u8], services_running: bool, busy: bool) -> Result<()> {
     let seg: Vec<&str> = path.trim_start_matches('/').split('/').collect();
 
     match (method, seg.as_slice()) {
@@ -6312,6 +6327,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let mut active: EnabledActive = read_json(&p).unwrap_or_default();
                 active.enabled = req.enabled;
                 write_json_pretty(&p, &active)?;
+                restart_module_after_save_if_running(services_running, busy, "operaproxy")?;
                 Ok(())
             })();
             match res {
@@ -6411,6 +6427,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
                 let p = program_root("operaproxy").join("config/sni.json");
                 write_text_atomic(&p, &req.content)?;
+                restart_module_after_save_if_running(services_running, busy, "operaproxy")?;
                 Ok(())
             })();
             match res {
@@ -6459,6 +6476,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                     _ => "EU".to_string(),
                 };
                 write_text_atomic(&p, &format!("{}\n", server))?;
+                restart_module_after_save_if_running(services_running, busy, "operaproxy")?;
                 Ok(format!("{}\n", server))
             })();
             match res {
@@ -6482,6 +6500,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
                 let p = program_root("operaproxy").join("byedpi/config/start.txt");
                 write_text_atomic(&p, &req.content)?;
+                restart_module_after_save_if_running(services_running, busy, "operaproxy")?;
                 Ok(())
             })();
             match res {
@@ -6503,6 +6522,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
                 let p = program_root("operaproxy").join("byedpi/config/restart.txt");
                 write_text_atomic(&p, &req.content)?;
+                restart_module_after_save_if_running(services_running, busy, "operaproxy")?;
                 Ok(())
             })();
             match res {
@@ -6526,6 +6546,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
                 let p = program_root("operaproxy").join("port.json");
                 write_json_pretty(&p, &v)?;
+                restart_module_after_save_if_running(services_running, busy, "operaproxy")?;
                 Ok(())
             })();
             match res {
@@ -6558,6 +6579,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                     anyhow::bail!("server_selection_test_url must not be empty");
                 }
                 crate::programs::operaproxy::write_opera_args(&args)?;
+                restart_module_after_save_if_running(services_running, busy, "operaproxy")?;
                 Ok(())
             })();
             match res {
@@ -6589,6 +6611,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                     anyhow::bail!("resolver list must not be empty");
                 }
                 crate::programs::operaproxy::write_bootstrap_dns(&clean)?;
+                restart_module_after_save_if_running(services_running, busy, "operaproxy")?;
                 Ok(())
             })();
             match res {
@@ -7103,7 +7126,8 @@ fn handle_connection(mut stream: TcpStream, state: SharedState) -> Result<()> {
         return handle_get_programs(stream);
     }
     if path.starts_with("/api/programs/") {
-        return handle_programs_subroutes(stream, method.as_str(), path.as_str(), &headers, &body, services_running);
+        let busy = start_in_progress || stop_in_progress;
+        return handle_programs_subroutes(stream, method.as_str(), path.as_str(), &headers, &body, services_running, busy);
     }
 
     // Strategic folders API (nfqws/nfqws2 shared lists/binaries and nfqws2 lua scripts)
@@ -7123,6 +7147,10 @@ match (method.as_str(), path.as_str()) {
 
         ("GET", "/api/runtime-apply/status") => {
             write_json(stream, 200, crate::runtime_apply::status_json())
+        }
+
+        ("GET", "/api/module-restart/status") => {
+            write_json(stream, 200, crate::module_restart::status_json())
         }
 
         ("GET", "/api/status") => {
