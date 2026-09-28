@@ -13,9 +13,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <!-- Needed to list all installed apps (incl. system) for the app picker on Android 11+. -->
-    <uses-permission
-        android:name="android.permission.QUERY_ALL_PACKAGES"
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
+
+    <!-- Required since Android 14 for a foregroundServiceType="specialUse". -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
 
     <application
@@ -186,6 +188,23 @@
             android:name=".diagnostics.nfqws.NfqwsTesterOverlayService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!-- Non-root engine. Establishes the local TUN interface through the
+             standard Android VpnService and keeps it alive for the lifetime of
+             the userspace engine process. Only used when the ZDT-D root module
+             is not installed; the root flow does not go through this service. -->
+        <service
+            android:name=".noroot.VpnEngineService"
+            android:exported="false"
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:foregroundServiceType="specialUse">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="local DPI-bypass tunnel for selected apps" />
+        </service>
 
         <provider
             android:name="androidx.core.content.FileProvider"

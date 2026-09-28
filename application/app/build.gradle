@@ -58,6 +58,39 @@ def bundledBusyBoxSources = [
 def bundledModuleSha = file("$generatedAssetsDir/busybox/zdt_module.sha256")
 def bundledModuleCache = file("$generatedAssetsDir/busybox/zdt_module.cache")
 
+// Non-root engine binaries. The asset layout is fixed by
+// NonRootBinaries.assetPath(): assets/noroot-binaries/<abi>/<assetName>.
+// The local CI-shaped checkout provides them under out/artifacts/<engine>/<abi>.
+def norootBinariesDir = file("$generatedAssetsDir/noroot-binaries")
+def norootArtifactsDir = new File(project.projectDir, '../../out/artifacts')
+// asset name (matches the APK entry) -> (source artifact dir name, file name)
+def norootBinarySources = [
+    'sing-box':      [dir: 'sing-box',  name: 'sing-box'],
+    'tun2socks':     [dir: 'tun2socks', name: 'tun2socks'],
+    'mihomo':        [dir: 'mihomo',    name: 'mihomo'],
+    'byedpi':        [dir: 'byedpi',    name: 'byedpi'],
+    'dnscrypt':      [dir: 'dnscrypt',  name: 'dnscrypt'],
+    'd2s':           [dir: 'd2s',       name: 'd2s'],
+    'hysteria2':     [dir: 'hysteria2', name: 'hysteria2'],
+    'wireproxy':     [dir: 'wireproxy', name: 'wireproxy'],
+    'torproxy':      [dir: 'torproxy',  name: 'torproxy'],
+    'lyrebird':      [dir: 'lyrebird',  name: 'lyrebird'],
+    'mieru':         [dir: 'mieru',     name: 'mieru']
+]
+def norootAbis = ['arm64-v8a', 'armeabi-v7a']
+// CI downloads arm64 artifacts to out/artifacts/<engine>/arm64 and arm32 to
+// out/artifacts/<engine>/arm32; the abi mapping below mirrors that.
+def norootArtifactAbi = ['arm64-v8a': 'arm64', 'armeabi-v7a': 'arm32']
+def norootSourceFiles = norootBinarySources.collectMany { assetName, src ->
+  norootAbis.collect { abi ->
+    new File(norootArtifactsDir, "${src.dir}/${norootArtifactAbi[abi]}/${src.name}")
+  }
+}
+def requireNorootBinaries = providers.gradleProperty('zdtRequireNorootBinaries')
+    .orElse(providers.environmentVariable('ZDT_REQUIRE_NOROOT_BINARIES'))
+    .map { it.toBoolean() }
+    .orElse(false)
+
 def sha256Hex = { File source ->
   def digest = java.security.MessageDigest.getInstance('SHA-256')
   source.withInputStream { input ->
@@ -302,6 +335,89 @@ tasks.register('ensureZdtModuleZip') {
 tasks.named('preBuild') {
   dependsOn('prepareZdtGeneratedAssets')
   dependsOn('verifyBundledHelperAssets')
+  dependsOn('verifyNorootBinaries')
+}
+
+// Copy the non-root engine binaries produced by the CI build jobs into the
+// generated assets directory. The CI "Prepare non-root engine APK assets" step
+// already lays them out under <generatedAssetsDir>/noroot-binaries/<abi>/<name>;
+// this task is the local-build equivalent (build.sh / manual checkout), where
+// the same artifacts live under out/artifacts/<engine>/<arm64|arm32>.
+tasks.register('prepareNorootBinaries') {
+  // Keep the source collection optional as a whole. Registering individual
+  // missing files with inputs.file(...).optional() is still validated as a
+  // required input by Gradle 9.4.1.
+  inputs.files(norootSourceFiles).withPropertyName('norootSources').optional()
+  norootBinarySources.each { assetName, src ->
+    norootAbis.each { abi ->
+      outputs.file(new File(norootBinariesDir, "$abi/$assetName"))
+    }
+  }
+
+  doLast {
+    norootBinariesDir.mkdirs()
+    norootBinarySources.each { assetName, src ->
+      norootAbis.each { abi ->
+        def target = new File(norootBinariesDir, "$abi/$assetName")
+        // The CI step may have prepared this file already; never overwrite a
+        // good copy with an absent local one.
+        if (target.exists() && target.length() > 0L) {
+          return
+        }
+        def source = new File(norootArtifactsDir,
+            "${src.dir}/${norootArtifactAbi[abi]}/${src.name}")
+        target.parentFile.mkdirs()
+        if (source.exists()) {
+          java.nio.file.Files.copy(
+              source.toPath(),
+              target.toPath(),
+              java.nio.file.StandardCopyOption.REPLACE_EXISTING
+          )
+          target.setExecutable(true, false)
+          target.setReadable(true, false)
+          target.setWritable(true, true)
+          println("[ZDT-D] bundled non-root binary: ${target}")
+        } else {
+          println("[ZDT-D] non-root binary not available yet (skipped): ${source}")
+        }
+      }
+    }
+  }
+}
+
+// Fail the build when the non-root binaries the app expects are absent, so a
+// CI misconfiguration is caught here rather than at runtime on the device.
+//
+// Lenient by default: a plain local build (build.sh) has no engine artifacts at
+// all and must still produce a root-only APK. Pass -PzdtRequireNorootBinaries
+// (as the GitHub build does) to make a partial/missing bundle fatal.
+tasks.register('verifyNorootBinaries') {
+  dependsOn('prepareNorootBinaries')
+  norootBinarySources.each { assetName, src ->
+    norootAbis.each { abi ->
+      inputs.file(file("$norootBinariesDir/$abi/$assetName")).optional()
+    }
+  }
+
+  doLast {
+    def require = requireNorootBinaries.get()
+    def present = 0
+    def missing = []
+    norootBinarySources.each { assetName, src ->
+      norootAbis.each { abi ->
+        def target = new File(norootBinariesDir, "$abi/$assetName")
+        if (target.exists() && target.length() > 0L) {
+          present += 1
+        } else {
+          missing << "noroot-binaries/$abi/$assetName"
+        }
+      }
+    }
+    if (require && missing) {
+      throw new GradleException("Bundled non-root binary assets are missing under ${norootBinariesDir}:\n${missing.join('\n')}")
+    }
+    println("[ZDT-D] non-root binaries: ${present} present, ${missing.size()} missing (require=${require})")
+  }
 }
 
 

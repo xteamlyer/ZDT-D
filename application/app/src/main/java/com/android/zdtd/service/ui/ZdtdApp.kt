@@ -147,6 +147,7 @@ fun ZdtdApp(
   actions: ZdtdActions,
 ) {
   val setup by setupFlow.collectAsStateWithLifecycle()
+  val uiState by uiStateFlow.collectAsStateWithLifecycle()
 
   AnimatedContent(
     targetState = setup.step,
@@ -170,7 +171,7 @@ fun ZdtdApp(
   ) { setupStep ->
     when (setupStep) {
       SetupStep.WELCOME -> WelcomeScreen(onAccept = actions::acceptWelcome)
-      SetupStep.ROOT -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot, onRemoteSetup = actions::openRemoteSetup)
+      SetupStep.ROOT -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot, onNonRoot = actions::useNonRootMode, onRemoteSetup = actions::openRemoteSetup)
       SetupStep.INSTALL -> InstallModuleScreen(
         rootState = rootState,
         setup = setup,
@@ -192,7 +193,7 @@ fun ZdtdApp(
       SetupStep.REBOOT -> {
         when (rootState) {
           RootState.CHECKING -> SplashScreen()
-          RootState.DENIED -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot, onRemoteSetup = actions::openRemoteSetup)
+          RootState.DENIED -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot, onNonRoot = actions::useNonRootMode, onRemoteSetup = actions::openRemoteSetup)
           RootState.GRANTED -> RebootRequiredScreen(
             setup = setup,
             text = setup.rebootRequiredText,
@@ -201,9 +202,19 @@ fun ZdtdApp(
         }
       }
       SetupStep.DONE -> {
-        when (rootState) {
+        if (uiState.nonRootMode) {
+          MainShell(
+            setup = setup,
+            uiStateFlow = uiStateFlow,
+            logsFlow = logsFlow,
+            appUpdateFlow = appUpdateFlow,
+            backupFlow = backupFlow,
+            programUpdatesFlow = programUpdatesFlow,
+            actions = actions,
+          )
+        } else when (rootState) {
           RootState.CHECKING -> SplashScreen()
-          RootState.DENIED -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot, onRemoteSetup = actions::openRemoteSetup)
+          RootState.DENIED -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot, onNonRoot = actions::useNonRootMode, onRemoteSetup = actions::openRemoteSetup)
           RootState.GRANTED -> {
             MainShell(
               setup = setup,

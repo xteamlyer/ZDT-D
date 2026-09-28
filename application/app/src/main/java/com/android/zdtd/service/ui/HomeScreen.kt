@@ -135,6 +135,12 @@ fun HomeScreen(
     uiStateFlow.map { it.daemonLogDetailedTail }.distinctUntilChanged()
   }.collectAsStateWithLifecycle(initialValue = "")
 
+  // Non-root mode is rendered with the same card; this only controls an extra
+  // hint line so the user knows NFQUEUE strategies are unavailable.
+  val nonRootMode by remember(uiStateFlow) {
+    uiStateFlow.map { it.nonRootMode }.distinctUntilChanged()
+  }.collectAsStateWithLifecycle(initialValue = false)
+
   val on = ApiModels.isServiceOn(status)
   val landscape = rememberUseLandscapeControlLayout()
   val metrics = rememberHomeLayoutMetrics()
@@ -157,6 +163,7 @@ fun HomeScreen(
       actions = actions,
       heroVisible = heroVisible,
       logsVisible = logsVisible,
+      nonRootMode = nonRootMode,
       topContentPadding = topContentPadding,
       bottomContentPadding = bottomContentPadding,
     )
@@ -194,6 +201,7 @@ fun HomeScreen(
         actions = actions,
         dialSize = metrics.dialSize,
         compact = metrics.compact,
+        nonRootMode = nonRootMode,
       )
     }
 
@@ -228,6 +236,7 @@ private fun ServiceHeroCard(
   actions: ZdtdActions,
   dialSize: Dp,
   compact: Boolean,
+  nonRootMode: Boolean = false,
   modifier: Modifier = Modifier,
   fillHeight: Boolean = false,
 ) {
@@ -280,6 +289,9 @@ private fun ServiceHeroCard(
   } else {
     stringResource(R.string.home_service_stopped_hint)
   }
+  // In non-root mode the NFQUEUE strategies are unavailable; make that visible
+  // on the home card so the difference is never a silent surprise.
+  val modeHint = if (nonRootMode) stringResource(R.string.noroot_mode_hint) else ""
 
   val cardBackground = if (light) {
     scheme.surfaceContainerLowest.copy(alpha = 0.98f)
@@ -364,6 +376,16 @@ private fun ServiceHeroCard(
           accent = accent,
           compact = compact,
         )
+
+        if (modeHint.isNotEmpty()) {
+          Spacer(Modifier.height(if (compact) 4.dp else 6.dp))
+          StableServiceHintLine(
+            text = modeHint,
+            busy = busy,
+            accent = accent.copy(alpha = 0.72f),
+            compact = compact,
+          )
+        }
       }
     }
   }
@@ -1426,6 +1448,7 @@ private fun LandscapeHomeContent(
   actions: ZdtdActions,
   heroVisible: Boolean,
   logsVisible: Boolean,
+  nonRootMode: Boolean = false,
   topContentPadding: Dp,
   bottomContentPadding: Dp,
 ) {
@@ -1450,6 +1473,7 @@ private fun LandscapeHomeContent(
         actions = actions,
         dialSize = 158.dp,
         compact = true,
+        nonRootMode = nonRootMode,
         modifier = Modifier.fillMaxSize(),
         fillHeight = true,
       )

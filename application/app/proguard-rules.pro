@@ -17,6 +17,11 @@
 -keep class com.android.zdtd.service.xposed.ZdtdHideHook { *; }
 -dontwarn de.robv.android.xposed.**
 
+# Non-root engine. The VpnEngineService is declared in the manifest and spawned
+# from ProcessBuilder; keep its entry points stable so R8 does not rename the
+# companion factory used by intent extras.
+-keep class com.android.zdtd.service.noroot.** { *; }
+
 # VPS SSH client. Bouncy Castle keeps modern OpenSSH host-key/KEX support on older Android runtimes.
 -keep class com.jcraft.jsch.** { *; }
 -dontwarn com.jcraft.jsch.**

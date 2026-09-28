@@ -319,7 +319,7 @@ fun WelcomeScreen(onAccept: () -> Unit) {
 }
 
 @Composable
-fun RootInfoScreen(rootState: RootState, onRequest: () -> Unit, onRemoteSetup: () -> Unit) {
+fun RootInfoScreen(rootState: RootState, onRequest: () -> Unit, onNonRoot: () -> Unit, onRemoteSetup: () -> Unit) {
   val arm64Ok = remember { isArm64OnlySupported() }
   val compact = rememberIsCompactWidth()
   val tablet = rememberIsTabletLayout()
@@ -425,6 +425,9 @@ fun RootInfoScreen(rootState: RootState, onRequest: () -> Unit, onRemoteSetup: (
                 modifier = Modifier.fillMaxWidth(),
                 text = stringResource(R.string.setup_request_root),
               )
+              OutlinedButton(onClick = onNonRoot, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.setup_use_non_root))
+              }
               if (REMOTE_SETUP_ENTRY_ENABLED) {
                 OutlinedButton(onClick = onRemoteSetup, modifier = Modifier.fillMaxWidth()) {
                   Text("Удалённая настройка")
@@ -501,6 +504,9 @@ fun RootInfoScreen(rootState: RootState, onRequest: () -> Unit, onRemoteSetup: (
                 text = stringResource(R.string.setup_request_root),
               )
 
+              OutlinedButton(onClick = onNonRoot, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.setup_use_non_root))
+              }
               if (REMOTE_SETUP_ENTRY_ENABLED) {
                 OutlinedButton(onClick = onRemoteSetup, modifier = Modifier.fillMaxWidth()) {
                   Text("Удалённая настройка")

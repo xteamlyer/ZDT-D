@@ -17,6 +17,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
 import androidx.core.view.WindowCompat
@@ -47,6 +49,18 @@ class MainActivity : AppCompatActivity() {
     ActivityResultContracts.RequestPermission()
   ) { granted ->
     vm.onPostNotificationsPermissionResult(granted)
+  }
+
+  /**
+   * Android VPN consent. Required only in non-root mode: before
+   * [com.android.zdtd.service.noroot.VpnEngineService] can establish the TUN,
+   * the system asks the user once per app. When consent is granted we retry
+   * the toggle so the tunnel comes up in the same gesture.
+   */
+  private val vpnConsentLauncher = registerForActivityResult(
+    ActivityResultContracts.StartActivityForResult()
+  ) { result ->
+    vm.onVpnConsentResult(result.resultCode == android.app.Activity.RESULT_OK)
   }
 
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -109,6 +123,16 @@ class MainActivity : AppCompatActivity() {
                   vm.onPostNotificationsPermissionResult(true)
                 }
               }
+            }
+          }
+        }
+
+        // Non-root mode: when the engine asks for Android VPN consent, show the
+        // system dialog and report the result back.
+        launch {
+          vm.uiState.map { it.nonRootConsentIntent }.distinctUntilChanged().collect { intent ->
+            if (intent != null) {
+              runCatching { vpnConsentLauncher.launch(intent) }
             }
           }
         }

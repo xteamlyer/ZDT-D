@@ -211,6 +211,12 @@ data class UiState(
   val daemonLogTail: String = "",
   val daemonLogDetailedTail: String = "",
   val tgWsProxy: TgWsProxyComponentState = TgWsProxyComponentState(),
+  // Non-root mode: when the ZDT-D root module is not installed the app drives a
+  // userspace engine behind a VpnService instead of the root daemon. The whole
+  // UI keeps consuming StatusReport, so both modes render identically.
+  val nonRootMode: Boolean = false,
+  val nonRootRunning: Boolean = false,
+  val nonRootConsentIntent: android.content.Intent? = null,
 )
 
 private data class StartupTimingPlan(
@@ -327,6 +333,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
   private val remoteRoot = RemoteRootClient()
   private val tgWsProxyRepository = TgWsProxyComponentRepository(ctx, root)
 
+  // Non-root engine. Created lazily: on a rooted device this is never touched
+  // and no VpnService machinery is initialized.
+  private val nonRootEngine by lazy { com.android.zdtd.service.noroot.NonRootEngine(ctx) }
+  @Volatile private var rootModeResolved: Boolean = false
+
   private val hotspotSettingsMutex = Mutex()
 
   private val githubHttp = OkHttpClient.Builder()
@@ -352,6 +363,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
   private val _setup = MutableStateFlow(
     SetupUiState(
       step = when {
+        root.getPreferredRuntimeMode() == "non_root" -> SetupStep.DONE
         root.isSetupDone() -> SetupStep.DONE
         root.isWelcomeAccepted() -> SetupStep.ROOT
         else -> SetupStep.WELCOME
@@ -573,9 +585,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     // Restore cached app-update banner state (persists across restarts).
     restoreCachedAppUpdateState()
 
+    // Decide root vs non-root up-front, before any daemon call, so the UI never
+    // flashes a "daemon offline" banner on a device that will use the built-in
+    // userspace engine instead.
+    viewModelScope.launch(Dispatchers.Main.immediate + ceh) { resolveRootMode() }
+
     // If the user has already accepted the welcome screen (or completed setup earlier),
     // kick off a root check automatically on app start.
-    if (root.isWelcomeAccepted() || root.isSetupDone()) {
+    if ((root.isWelcomeAccepted() || root.isSetupDone()) && root.getPreferredRuntimeMode() != "non_root") {
       _rootState.value = RootState.CHECKING
       ensureRootAndLoadToken()
     }
@@ -1653,11 +1670,24 @@ private fun clearDownloadedUpdateApk() {
 
   private fun maybeStartForegroundJobs() {
     if (!appVisible) return
-    if (_rootState.value != RootState.GRANTED) return
+    val nonRoot = _uiState.value.nonRootMode
+    if (!nonRoot && _rootState.value != RootState.GRANTED) return
     if (!isSetupDone()) return
 
     // Background update check (non-blocking).
     maybeCheckAppUpdate(force = false)
+
+    // Non-root mode has no root daemon. The VpnService/local engine is the
+    // runtime, so do not enter the daemon handshake or start daemon-only jobs.
+    if (nonRoot) {
+      startupCompleted = true
+      startupJob?.cancel()
+      startupJob = null
+      _uiState.update { it.copy(startup = StartupUiState.hidden(), daemonUnavailableVisible = false) }
+      if (activeMainTabHint == "STATS") startStatsPowerSampling()
+      startStatusPolling()
+      return
+    }
 
     if (startupCompleted) {
       if (activeMainTabHint == "STATS") startStatsPowerSampling()
@@ -1677,8 +1707,8 @@ private fun clearDownloadedUpdateApk() {
     activeMainTabHint = tab
 
     if (!wasHome && tab == "HOME") {
-      refreshDaemonLog()
-      if (appVisible && _rootState.value == RootState.GRANTED && isSetupDone()) {
+      if (!_uiState.value.nonRootMode) refreshDaemonLog()
+      if (appVisible && !_uiState.value.nonRootMode && _rootState.value == RootState.GRANTED && isSetupDone()) {
         // If the previous tab put daemon log polling into the long background delay,
         // restart it so HOME immediately switches back to the fast live-tail interval.
         startDaemonLogPolling()
@@ -1693,7 +1723,8 @@ private fun clearDownloadedUpdateApk() {
 
     // Apply the new screen-aware status cadence immediately instead of waiting for
     // the previous tab's delay to expire. Statistics gets a fresh sample on entry.
-    if (previousTab != tab && startupCompleted && appVisible && _rootState.value == RootState.GRANTED && isSetupDone()) {
+    if (previousTab != tab && startupCompleted && appVisible &&
+      (_uiState.value.nonRootMode || _rootState.value == RootState.GRANTED) && isSetupDone()) {
       startStatusPolling()
     }
   }
@@ -1896,6 +1927,30 @@ private fun clearDownloadedUpdateApk() {
     runCatching { root.resetRootShell() }
     _rootState.value = RootState.CHECKING
     ensureRootAndLoadToken()
+  }
+
+  override fun useNonRootMode() {
+    root.setWelcomeAccepted(true)
+    root.setPreferredRuntimeMode("non_root")
+    root.setSetupDone(false)
+    rootModeResolved = true
+    startupCompleted = true
+    _rootState.value = RootState.DENIED
+    _setup.update { it.copy(step = SetupStep.DONE) }
+    _uiState.update {
+      it.copy(
+        nonRootMode = true,
+        daemonOnline = false,
+        nonRootConsentIntent = null,
+        startup = StartupUiState.hidden(),
+        daemonUnavailableVisible = false,
+      )
+    }
+    launchIO {
+      refreshNonRootStatus()
+      withContext(Dispatchers.Main.immediate) { maybeStartForegroundJobs() }
+      log("INFO", "userspace mode selected")
+    }
   }
 
   override fun openRemoteSetup() {
@@ -5785,7 +5840,10 @@ private fun shQuote(s: String): String {
     statusJob = launchIO {
       while (isActive) {
         try {
-          fetchAndUpdateStatus(force = true)
+          // Non-root mode has no daemon to poll; the report is synthesized
+          // locally from the tunnel state instead.
+          if (_uiState.value.nonRootMode) refreshNonRootStatus()
+          else fetchAndUpdateStatus(force = true)
         } catch (e: Throwable) {
           handleStatusPollFailure("status poll", e)
         }
@@ -5829,6 +5887,9 @@ private fun shQuote(s: String): String {
     val pair = runCatching {
       root.readLogTailPair(mainPath, detailedPath, 220)
     }.getOrElse { e ->
+      // Non-root mode has no daemon log; keep whatever the UI already shows so
+      // the in-app engine logs (written to the profile dir) stay visible.
+      if (_uiState.value.nonRootMode) return
       log("WARN", "daemon log read failed: ${e.message ?: e}")
       return
     }
@@ -5844,7 +5905,8 @@ private fun shQuote(s: String): String {
   override fun refreshStatus() {
     launchIO {
       try {
-        fetchAndUpdateStatus(force = true)
+        if (_uiState.value.nonRootMode) refreshNonRootStatus()
+        else fetchAndUpdateStatus(force = true)
       } catch (e: Throwable) {
         handleStatusPollFailure("status refresh", e)
       }
@@ -5884,7 +5946,8 @@ private fun shQuote(s: String): String {
   override fun toggleService() {
     val snapshot = _uiState.value
     if (snapshot.busy) return
-    val wasOn = ApiModels.isServiceOn(snapshot.status)
+    val wasOn = if (snapshot.nonRootMode) snapshot.nonRootRunning
+                else ApiModels.isServiceOn(snapshot.status)
 
     // Publish the transition synchronously, before the IO coroutine is
     // scheduled. Home can immediately animate STARTING/STOPPING on touch.
@@ -5892,19 +5955,25 @@ private fun shQuote(s: String): String {
 
     launchIO {
       try {
-        if (!wasOn && isNfqwsTesterLockActive()) {
+        if (!wasOn && !snapshot.nonRootMode && isNfqwsTesterLockActive()) {
           withContext(Dispatchers.Main.immediate) {
             toast(str(R.string.nfqws_tester_service_blocked_start))
           }
           log("ERR", "start blocked: nfqws tester session is active")
           return@launchIO
         }
-        val ok = if (wasOn) api.stopService() else api.startService()
-        if (ok) root.setCachedServiceOn(!wasOn)
-        if (ok) {
-          log("OK", str(if (wasOn) R.string.log_service_stopped else R.string.log_service_started))
+        // The NFQUEUE tester has no non-root equivalent, so its lock is not
+        // checked in non-root mode.
+        if (snapshot.nonRootMode) {
+          toggleNonRoot(wasOn)
         } else {
-          log("ERR", if (wasOn) "/api/stop failed" else "/api/start failed")
+          val ok = if (wasOn) api.stopService() else api.startService()
+          if (ok) root.setCachedServiceOn(!wasOn)
+          if (ok) {
+            log("OK", str(if (wasOn) R.string.log_service_stopped else R.string.log_service_started))
+          } else {
+            log("ERR", if (wasOn) "/api/stop failed" else "/api/start failed")
+          }
         }
       } catch (e: Throwable) {
         log("ERR", "toggle failed: ${e.message ?: e}")
@@ -5913,7 +5982,7 @@ private fun shQuote(s: String): String {
         // read. This prevents STOPPING -> RUNNING -> STOPPED flicker caused by
         // clearing busy while the old status report is still cached.
         try {
-          fetchAndUpdateStatus(force = true)
+          if (snapshot.nonRootMode) refreshNonRootStatus() else fetchAndUpdateStatus(force = true)
         } catch (e: Throwable) {
           handleStatusPollFailure("toggle status refresh", e)
         }
@@ -5928,7 +5997,110 @@ private fun shQuote(s: String): String {
     }.getOrDefault(false)
   }
 
+  // ----- Non-root mode -----
+
+  /**
+   * Resolves whether this device can use the root daemon. Called once per
+   * process; the result is cached because the probe may show a su prompt.
+   */
+  private suspend fun resolveRootMode() {
+    if (rootModeResolved) return
+    rootModeResolved = true
+    if (root.getPreferredRuntimeMode() == "non_root") {
+      startupCompleted = true
+      _uiState.update {
+        it.copy(
+          nonRootMode = true,
+          daemonOnline = false,
+          startup = StartupUiState.hidden(),
+          daemonUnavailableVisible = false,
+        )
+      }
+      refreshNonRootStatus()
+      maybeStartForegroundJobs()
+      return
+    }
+    val result = withContext(Dispatchers.IO) {
+      com.android.zdtd.service.noroot.RootAvailability.detect(ctx)
+    }
+    log("INFO", "mode: ${com.android.zdtd.service.noroot.RootAvailability.describe(result)}")
+    _uiState.update {
+      it.copy(
+        nonRootMode = !result.isRoot,
+        // Root mode keeps working exactly as before: the daemon is online.
+        daemonOnline = result.isRoot,
+      )
+    }
+    if (!result.isRoot) {
+      // No daemon to talk to; publish a synthesized report so the UI has
+      // something to render immediately.
+      refreshNonRootStatus()
+    }
+  }
+
+  private suspend fun toggleNonRoot(wasOn: Boolean) {
+    val result = withContext(Dispatchers.IO) {
+      if (wasOn) {
+        nonRootEngine.stop()
+        NonRootToggleResult.Stopped
+      } else {
+        when (val r = nonRootEngine.start()) {
+          is com.android.zdtd.service.noroot.NonRootEngine.StartResult.Started ->
+            NonRootToggleResult.Started(r.label)
+          is com.android.zdtd.service.noroot.NonRootEngine.StartResult.ConsentRequired ->
+            NonRootToggleResult.ConsentRequired(r.intent)
+          is com.android.zdtd.service.noroot.NonRootEngine.StartResult.Failed ->
+            NonRootToggleResult.Failed(r.reason)
+          com.android.zdtd.service.noroot.NonRootEngine.StartResult.AlreadyRunning ->
+            NonRootToggleResult.Started("already running")
+          com.android.zdtd.service.noroot.NonRootEngine.StartResult.NothingEnabled ->
+            NonRootToggleResult.NothingEnabled
+        }
+      }
+    }
+    when (result) {
+      is NonRootToggleResult.Started -> {
+        root.setCachedServiceOn(true)
+        log("OK", str(R.string.log_service_started))
+      }
+      is NonRootToggleResult.Stopped -> {
+        root.setCachedServiceOn(false)
+        log("OK", str(R.string.log_service_stopped))
+      }
+      is NonRootToggleResult.ConsentRequired -> {
+        // Hand the system consent intent to the UI; the activity starts it and
+        // re-invokes toggleService() with the granted fd.
+        log("INFO", str(R.string.noroot_consent_required))
+        _uiState.update { it.copy(nonRootConsentIntent = result.intent) }
+      }
+      is NonRootToggleResult.Failed -> log("ERR", str(R.string.noroot_start_failed_fmt, result.reason))
+      NonRootToggleResult.NothingEnabled -> log("WARN", str(R.string.noroot_nothing_enabled))
+    }
+  }
+
+  /** Publishes a locally-built status report so the existing UI works as-is. */
+  private suspend fun refreshNonRootStatus() {
+    val running = withContext(Dispatchers.IO) { nonRootEngine.isRunning() }
+    _uiState.update {
+      it.copy(
+        nonRootRunning = running,
+        daemonOnline = running,
+        status = com.android.zdtd.service.noroot.NonRootStatus.report(running),
+      )
+    }
+    root.setCachedServiceOn(running)
+  }
+
+  private sealed class NonRootToggleResult {
+    data class Started(val label: String) : NonRootToggleResult()
+    object Stopped : NonRootToggleResult()
+    data class ConsentRequired(val intent: android.content.Intent) : NonRootToggleResult()
+    data class Failed(val reason: String) : NonRootToggleResult()
+    object NothingEnabled : NonRootToggleResult()
+  }
+
   private suspend fun refreshProgramsNow(force: Boolean = false) {
+    if (_uiState.value.nonRootMode) return
     val now = System.currentTimeMillis()
     val current = _uiState.value.programs
     if (!force && current.isNotEmpty() && (now - lastProgramsFetchAtMs) < programsFreshMs) return
@@ -7730,6 +7902,18 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
       _appUpdate.update { it.copy(daemonStatusNotificationEnabled = false) }
       toast(str(R.string.mv_auto_077))
     }
+  }
+
+  override fun onVpnConsentResult(granted: Boolean) {
+    // Always clear the pending intent so we never relaunch a stale one.
+    _uiState.update { it.copy(nonRootConsentIntent = null) }
+    if (!granted) {
+      log("ERR", str(R.string.noroot_consent_required))
+      return
+    }
+    // Consent granted: retry the start. toggleService() is idempotent here
+    // because nonRootRunning is still false.
+    toggleService()
   }
 
 

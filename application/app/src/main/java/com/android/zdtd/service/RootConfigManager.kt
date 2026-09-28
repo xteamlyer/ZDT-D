@@ -199,6 +199,14 @@ class RootConfigManager(private val context: Context) {
         // Use commit() so the flag is persisted immediately (important when user reboots right after install).
         prefs.edit().putBoolean("welcome_accepted", accepted).commit()
     }
+    /** Explicit user choice from the first-run mode selector: "root", "non_root", or unset. */
+    fun getPreferredRuntimeMode(): String? = prefs.getString("preferred_runtime_mode", null)
+    fun setPreferredRuntimeMode(mode: String?) {
+        val edit = prefs.edit()
+        if (mode.isNullOrBlank()) edit.remove("preferred_runtime_mode")
+        else edit.putString("preferred_runtime_mode", mode.trim().lowercase())
+        edit.commit()
+    }
 
     /**
      * Setup completion flag.
@@ -407,6 +415,25 @@ class RootConfigManager(private val context: Context) {
             "/data/adb/modules/ZDT-D/api/token",
             "/data/adb/modules/zdtd/api/token"
         ).distinct()
+    }
+
+    /**
+     * True when a root manager actually granted us a root shell.
+     *
+     * Unlike [isModuleInstalled], this proves root itself works — which is what
+     * the non-root auto-detection needs: a device can carry the module files
+     * from a previous installation while root is no longer available.
+     */
+    fun isRootAvailable(): Boolean {
+        // Reuse the cached shell first: on an already-granted device this is
+        // instant and does not show any prompt.
+        if (testRoot()) return true
+        // A failing 'id -u' with libsu usually means the cached shell is not
+        // root (the user may have denied the prompt once). Drop it and retry.
+        return runCatching {
+            resetRootShell()
+            testRoot()
+        }.getOrDefault(false)
     }
 
     // Triggers Magisk prompt on first call.

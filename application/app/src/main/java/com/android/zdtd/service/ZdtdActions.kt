@@ -151,6 +151,8 @@ interface ZdtdActions {
   fun retryDaemonStartup()
 
   fun retryRoot()
+  /** Select userspace/VpnService mode during first setup instead of requesting root. */
+  fun useNonRootMode()
   fun openRemoteSetup()
   fun exitRemoteControl()
   fun toggleService()
@@ -375,6 +377,12 @@ interface ZdtdActions {
 
   /** Called after the POST_NOTIFICATIONS runtime permission request (Android 13+). */
   fun onPostNotificationsPermissionResult(granted: Boolean)
+
+  /**
+   * Called after the Android VPN consent dialog (non-root mode only). When
+   * granted, the pending tunnel start is retried.
+   */
+  fun onVpnConsentResult(granted: Boolean)
 
   /** Hint from UI for screen-aware polling/throttling. */
   fun setActiveMainTab(tab: String)

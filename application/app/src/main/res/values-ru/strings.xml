@@ -569,6 +569,7 @@
     <string name="setup_root_body">ZDT-D — это root-модуль (Magisk / KernelSU / APatch) для обхода DPI-блокировок и ограничений трафика. Root нужен, потому что модуль запускает системные скрипты и сетевые компоненты на уровне ОС — то, что обычным приложениям недоступно.\n\nТакже root используется для установки/обновления модуля, управления демоном и чтения файлов модуля (токен и логи). Запрос root всегда подтверждается через ваш root-менеджер (Magisk / KernelSU / APatch), а разрешение можно отозвать в любой момент.</string>
     <string name="setup_root_waiting">Ожидание ответа от root-менэджера…</string>
     <string name="setup_request_root">Запросить Root</string>
+    <string name="setup_use_non_root">Продолжить без root</string>
     <string name="setup_root_denied">Root не предоставлен. Если вы нажали «Отказать», попробуйте ещё раз.</string>
     <string name="setup_reboot_required_title">Требуется перезагрузка</string>
     <string name="setup_reboot_required_body_default">Для завершения установки/обновления модуля необходимо перезагрузить устройство.</string>

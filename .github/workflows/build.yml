@@ -5723,6 +5723,119 @@ jobs:
           name: nfqws-tester-arm32
           path: out/artifacts/nfqws-tester/arm32
 
+      # Non-root engine binaries: the same artifacts the module packs, copied
+      # into the APK assets for VpnEngineService (see docs/NON_ROOT.md).
+      - name: Download noroot sing-box arm64
+        uses: actions/download-artifact@v7
+        with:
+          name: sing-box-arm64
+          path: out/artifacts/sing-box/arm64
+      - name: Download noroot sing-box arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: sing-box-arm32
+          path: out/artifacts/sing-box/arm32
+      - name: Download noroot tun2socks arm64
+        uses: actions/download-artifact@v7
+        with:
+          name: tun2socks-arm64
+          path: out/artifacts/tun2socks/arm64
+      - name: Download noroot tun2socks arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: tun2socks-arm32
+          path: out/artifacts/tun2socks/arm32
+      - name: Download noroot mihomo arm64
+        uses: actions/download-artifact@v7
+        with:
+          name: mihomo-arm64
+          path: out/artifacts/mihomo/arm64
+      - name: Download noroot mihomo arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: mihomo-arm32
+          path: out/artifacts/mihomo/arm32
+      - name: Download noroot byedpi arm64
+        uses: actions/download-artifact@v7
+        with:
+          name: byedpi-arm64
+          path: out/artifacts/byedpi/arm64
+      - name: Download noroot byedpi arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: byedpi-arm32
+          path: out/artifacts/byedpi/arm32
+      - name: Download noroot dnscrypt arm64
+        uses: actions/download-artifact@v7
+        with:
+          name: dnscrypt-arm64
+          path: out/artifacts/dnscrypt/arm64
+      - name: Download noroot dnscrypt arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: dnscrypt-arm32
+          path: out/artifacts/dnscrypt/arm32
+      - name: Download noroot hysteria2 arm64
+        uses: actions/download-artifact@v7
+        with:
+          name: hysteria2-arm64
+          path: out/artifacts/hysteria2/arm64
+      - name: Download noroot hysteria2 arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: hysteria2-arm32
+          path: out/artifacts/hysteria2/arm32
+      - name: Download noroot wireproxy arm64
+        uses: actions/download-artifact@v7
+        with:
+          name: wireproxy-arm64
+          path: out/artifacts/wireproxy/arm64
+      - name: Download noroot wireproxy arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: wireproxy-arm32
+          path: out/artifacts/wireproxy/arm32
+      - name: Download noroot d2s arm64
+        uses: actions/download-artifact@v7
+        with:
+          name: d2s-arm64
+          path: out/artifacts/d2s/arm64
+      - name: Download noroot d2s arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: d2s-arm32
+          path: out/artifacts/d2s/arm32
+      - name: Download noroot lyrebird arm64
+        uses: actions/download-artifact@v7
+        with:
+          name: lyrebird-arm64
+          path: out/artifacts/lyrebird/arm64
+      - name: Download noroot lyrebird arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: lyrebird-arm32
+          path: out/artifacts/lyrebird/arm32
+      - name: Download noroot torproxy arm64
+        uses: actions/download-artifact@v7
+        with:
+          name: torproxy-arm64
+          path: out/artifacts/torproxy/arm64
+      - name: Download noroot torproxy arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: torproxy-arm32
+          path: out/artifacts/torproxy/arm32
+      - name: Download noroot mieru arm64
+        uses: actions/download-artifact@v7
+        with:
+          name: mieru-arm64
+          path: out/artifacts/mieru/arm64
+      - name: Download noroot mieru arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: mieru-arm32
+          path: out/artifacts/mieru/arm32
+
       - name: Download BusyBox arm64
         uses: actions/download-artifact@v7
         with:
@@ -5829,6 +5942,46 @@ jobs:
             ls -lh "$DST"
           done
 
+      # Non-root engine binaries -> assets/noroot-binaries/<abi>/<assetName>,
+      # the layout NonRootBinaries.assetPath() reads from the APK.
+      - name: Prepare non-root engine APK assets
+        run: |
+          set -euo pipefail
+          # asset name (APK entry) | artifact dir | packaged file name
+          ENGINES=(
+            "sing-box|sing-box|sing-box"
+            "tun2socks|tun2socks|tun2socks"
+            "mihomo|mihomo|mihomo"
+            "byedpi|byedpi|byedpi"
+            "dnscrypt|dnscrypt|dnscrypt"
+            "d2s|d2s|d2s"
+            "hysteria2|hysteria2|hysteria2"
+            "wireproxy|wireproxy|wireproxy"
+            "torproxy|torproxy|torproxy"
+            "lyrebird|lyrebird|lyrebird"
+            "mieru|mieru|mieru"
+          )
+          declare -A ARTIFACT_ABI=(
+            [arm64-v8a]="arm64"
+            [armeabi-v7a]="arm32"
+          )
+          for abi in arm64-v8a armeabi-v7a; do
+            A="${ARTIFACT_ABI[$abi]}"
+            for spec in "${ENGINES[@]}"; do
+              ASSET="${spec%%|*}"
+              REST="${spec#*|}"
+              DIR="${REST%%|*}"
+              NAME="${REST##*|}"
+              SRC="out/artifacts/$DIR/$A/$NAME"
+              DST="application/app/build/generated/zdt-assets/main/noroot-binaries/$abi/$ASSET"
+              test -s "$SRC" || { echo "::error::non-root engine artifact missing: $SRC"; exit 1; }
+              mkdir -p "$(dirname "$DST")"
+              cp -f "$SRC" "$DST"
+              chmod 755 "$DST"
+              ls -lh "$DST"
+            done
+          done
+
       - name: Build APK assemble${{ env.BUILD_TYPE }}
         working-directory: ${{ env.GRADLE_PROJECT_DIR }}
         env:
@@ -5839,6 +5992,7 @@ jobs:
             --no-daemon \
             --max-workers=$(nproc) \
             "-PzdtCompileSdk=${{ env.ZDT_COMPILE_SDK }}" \
+            "-PzdtRequireNorootBinaries=true" \
             "assemble${{ env.BUILD_TYPE }}"
 
       - name: Collect final artifacts
@@ -5860,6 +6014,24 @@ jobs:
             assets/dpi-detector/armeabi-v7a/dpi-detector \
             assets/nfqws-tester/arm64-v8a/nfqws_tester \
             assets/nfqws-tester/armeabi-v7a/nfqws_tester \
+            assets/noroot-binaries/arm64-v8a/sing-box \
+            assets/noroot-binaries/armeabi-v7a/sing-box \
+            assets/noroot-binaries/arm64-v8a/tun2socks \
+            assets/noroot-binaries/armeabi-v7a/tun2socks \
+            assets/noroot-binaries/arm64-v8a/mihomo \
+            assets/noroot-binaries/armeabi-v7a/mihomo \
+            assets/noroot-binaries/arm64-v8a/byedpi \
+            assets/noroot-binaries/armeabi-v7a/byedpi \
+            assets/noroot-binaries/arm64-v8a/dnscrypt \
+            assets/noroot-binaries/armeabi-v7a/dnscrypt \
+            assets/noroot-binaries/arm64-v8a/hysteria2 \
+            assets/noroot-binaries/armeabi-v7a/hysteria2 \
+            assets/noroot-binaries/arm64-v8a/wireproxy \
+            assets/noroot-binaries/armeabi-v7a/wireproxy \
+            assets/noroot-binaries/arm64-v8a/torproxy \
+            assets/noroot-binaries/armeabi-v7a/torproxy \
+            assets/noroot-binaries/arm64-v8a/mieru \
+            assets/noroot-binaries/armeabi-v7a/mieru \
             assets/busybox/busybox-arm64 \
             assets/busybox/busybox-arm64.sha256 \
             assets/busybox/busybox-arm64.source \
