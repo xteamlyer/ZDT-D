@@ -7052,6 +7052,13 @@ override fun uploadStrategicFile(dir: String, filename: String, bytes: ByteArray
 
 override fun listStrategicVariants(programId: String, onDone: (List<ApiModels.StrategyVariant>?) -> Unit) {
   launchIO {
+    // Non-root mode has no daemon: list the bundled strategy files locally.
+    // Only byedpi has a userspace engine, so only its strategies are useful.
+    if (_uiState.value.nonRootMode) {
+      val list = withContext(Dispatchers.IO) { nonRootProfiles.listStrategicVariants(programId) }
+      withContext(Dispatchers.Main.immediate) { onDone(list) }
+      return@launchIO
+    }
     val obj = runCatching { api.getJsonData("/api/strategicvar/${URLEncoder.encode(programId, "UTF-8")}") }.getOrNull()
     val filesArr = obj?.optJSONArray("files")
     val metaArr = obj?.optJSONArray("meta")
@@ -7085,6 +7092,13 @@ override fun listStrategicVariants(programId: String, onDone: (List<ApiModels.St
 
 override fun applyStrategicVariant(programId: String, profile: String, file: String, onDone: (Boolean) -> Unit) {
   launchIO {
+    // Non-root mode has no daemon: copy the strategy into the profile config.
+    if (_uiState.value.nonRootMode) {
+      val ok = withContext(Dispatchers.IO) { nonRootProfiles.applyStrategicVariant(programId, profile, file) }
+      if (ok) log("OK", "strategy $file applied to $programId/$profile") else log("ERR", "strategy $file apply failed")
+      withContext(Dispatchers.Main.immediate) { onDone(ok) }
+      return@launchIO
+    }
     val payload = JSONObject()
       .put("program", programId)
       .put("profile", profile)

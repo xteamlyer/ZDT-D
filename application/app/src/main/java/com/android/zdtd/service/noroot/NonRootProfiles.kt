@@ -224,6 +224,8 @@ class NonRootProfiles(context: Context) {
         "tun2socks" -> File(dir, "config.json")
         "myvpn" -> File(dir, "config.json")
         "myprogram" -> File(dir, "config.json")
+        // nfqws/nfqws2/dpitunnel/byedpi keep their args in `config/config.txt`.
+        "nfqws", "nfqws2", "dpitunnel", "byedpi" -> File(dir, "config/config.txt")
         else -> null
       }
       else -> null
@@ -342,6 +344,49 @@ class NonRootProfiles(context: Context) {
     if (!target.isFile) return false
     return runCatching { target.delete() }.getOrDefault(false)
   }
+
+  // ----- strategic variants (byedpi) -----
+
+  /**
+   * Lists the built-in strategy files for [program], mirroring the daemon's
+   * `/api/strategicvar/<program>`. Only the four programs the daemon allows are
+   * meaningful; in non-root mode only `byedpi` is an engine the userspace
+   * runtime can actually start, so the others return an empty list.
+   */
+  fun listStrategicVariants(program: String): List<ApiModels.StrategyVariant> {
+    if (!isAllowedStrategicProgram(program)) return emptyList()
+    val dir = strategicVarDir(program)
+    if (!dir.isDirectory) return emptyList()
+    return dir.listFiles { f -> f.isFile && f.name.endsWith(".txt") }
+      ?.sortedBy { it.name }
+      ?.map { ApiModels.StrategyVariant(name = it.name, sha256 = null) }
+      ?: emptyList()
+  }
+
+  /**
+   * Copies a built-in strategy into the profile's `config/config.txt`, exactly
+   * like the daemon's `/api/strategicvar/apply`. Returns false when the program,
+   * profile or strategy is unknown.
+   */
+  fun applyStrategicVariant(program: String, profile: String, file: String): Boolean {
+    if (!isAllowedStrategicProgram(program) || !isSafeProfileName(profile)) return false
+    val name = file.trim()
+    if (name.isEmpty() || !name.endsWith(".txt") || name.contains('/') || name.contains('\\')) return false
+    val src = strategicVarDir(program).resolve(name)
+    if (!src.isFile) return false
+    val dst = profileDir(program, profile).resolve("config/config.txt")
+    return runCatching {
+      dst.parentFile?.mkdirs()
+      src.copyTo(dst, overwrite = true)
+      true
+    }.getOrDefault(false)
+  }
+
+  private fun isAllowedStrategicProgram(program: String): Boolean =
+    program == "byedpi"
+
+  private fun strategicVarDir(program: String): File =
+    File(rootDir.parentFile, "strategic/strategicvar/$program")
 
   /** Reads a JSON API path locally; returns null when missing or unreadable. */
   fun readJsonPath(path: String): JSONObject? {

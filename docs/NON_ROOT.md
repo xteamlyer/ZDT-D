@@ -56,6 +56,20 @@ The app never depends on the daemon being reachable to stay usable:
 - **Custom programs (`myprogram`) without the daemon.** The binary list
   (`.../bin`), upload and delete operate on the profile's local `bin/`
   directory, so user-supplied engines keep working with no daemon.
+- **mihomo without the daemon.** The runtime config is built exactly like the
+  daemon's `prepare_runtime_config`: the user's `config.yaml` is sanitized
+  (the `tun`/`iptables` blocks and the port/bind/log scalars ZDT-D manages are
+  dropped) and a managed header is prepended with the profile's `mixed_port`,
+  `log_level` and controller port, then the VpnService `tun.file-descriptor`
+  block is appended. mihomo also gets the same home directory (`<profile>/work`)
+  the daemon gives it, so its cache lives next to the profile instead of in the
+  service's working directory.
+- **Strategy variants (byedpi) without the daemon.** `listStrategicVariants`
+  and `applyStrategicVariant` operate on the local strategy directory and
+  write the chosen strategy into the profile's `config/config.txt`, the same
+  file the userspace byedpi engine reads. `nfqws`/`nfqws2`/`dpitunnel` have no
+  userspace engine (NFQUEUE needs root), so their strategy lists come back
+  empty rather than erroring.
 - **Status** is synthesized locally (`NonRootStatus.report`) from the tunnel
   state, so Home, the Quick Settings tile and the widgets keep rendering.
 

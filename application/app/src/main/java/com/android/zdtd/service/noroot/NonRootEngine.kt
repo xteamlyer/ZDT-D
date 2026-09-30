@@ -177,6 +177,16 @@ class NonRootEngine(context: Context) {
     const val DEFAULT_TUN_ADDRESS = "172.31.225.2"
     const val D2S_AUTO_PORT_START = 11990
     const val DEFAULT_MIERU_RPC_PORT = 8964
+    // mihomo.rs `default_mixed_port`.
+    const val DEFAULT_MIHOMO_MIXED_PORT = 17890
+    // mihomo.rs `is_forbidden_block` / `is_forbidden_scalar`.
+    private val MIHOMO_FORBIDDEN_BLOCKS = setOf("tun", "iptables")
+    private val MIHOMO_FORBIDDEN_SCALARS = setOf(
+      "mixed-port", "allow-lan", "bind-address", "log-level",
+      "redir-port", "tproxy-port", "port", "socks-port", "external-controller",
+    )
+    // programs/common.rs `validate_loglevel`.
+    private val MIHOMO_LOG_LEVELS = setOf("debug", "info", "warn", "error", "silent")
   }
 
   private fun resolvePlan(): Plan? {
@@ -233,11 +243,16 @@ class NonRootEngine(context: Context) {
     for (name in profiles.readActive(program).enabled) {
       val setting = profiles.readSetting(program, name) ?: continue
       val packages = profiles.readAppList(program, name) ?: continue
+      // Same key and default as the daemon's `ProfileSetting.mixed_port`
+      // (`default_mixed_port`); reading `t2s_port` here would always miss and
+      // silently fall back to the sing-box default.
+      val mixedPort = setting.optInt("mixed_port", DEFAULT_MIHOMO_MIXED_PORT).takeIf { it in 1..65535 }
+        ?: DEFAULT_MIHOMO_MIXED_PORT
       return Plan(
         programId = program, profile = name, engine = NonRootBinaries.Engine.MIHOMO,
         tunAddress = tunAddressFor(setting, program, name), packages = packages, setting = setting,
         label = "mihomo / $name",
-        fdConfigPath = writeMihomoConfig(program, name, setting.optInt("t2s_port", DEFAULT_SINGBOX_SOCKS_PORT)),
+        fdConfigPath = writeMihomoConfig(program, name, mixedPort, setting.optString("log_level", "info")),
       )
     }
     return null
@@ -711,7 +726,12 @@ class NonRootEngine(context: Context) {
     NonRootBinaries.Engine.MIHOMO -> {
       // mihomo takes the descriptor from the `tun.file-descriptor` YAML field.
       checkNotNull(cfgPath) { "mihomo config missing" }
-      listOf("-f", cfgPath.absolutePath)
+      // Same home dir as the daemon (`-d <profile>/work` + `current_dir(work)`):
+      // mihomo keeps its cache.db / fakeip cache there, and without it the
+      // process would write into the service's working directory instead.
+      val home = profiles.profileDir(plan.programId, plan.profile).resolve("work")
+      runCatching { home.mkdirs() }
+      listOf("-d", home.absolutePath, "-f", cfgPath.absolutePath)
     }
     NonRootBinaries.Engine.TUN2SOCKS -> {
       // Root form is `-device tun://<name>` (the daemon owns /dev/tun); the descriptor here comes
@@ -891,23 +911,27 @@ class NonRootEngine(context: Context) {
   }
 
   /**
-   * mihomo reads the descriptor from the `tun.file-descriptor` field of its YAML config
-   * (config.RawTun.FileDescriptor), not from argv. The value is only known after
-   * VpnService.establish(), so it is written as the `%FD%` placeholder and substituted by
-   * VpnEngineService before launch. auto-route/auto-detect-interface must be off: VpnService
-   * already owns the interface and the routing table, letting mihomo touch either would fight it.
+   * Faithful Kotlin port of the daemon's mihomo `prepare_runtime_config`
+   * (mihomo.rs): the user's `config.yaml` is sanitized — the `tun`/`iptables`
+   * blocks and the port/bind/log scalars ZDT-D manages are dropped — and a
+   * managed header is prepended with the profile's own `mixed_port`, `log_level`
+   * and controller port, so the runtime config is built the same way with or
+   * without root. The `tun:` block appended last carries the VpnService
+   * descriptor placeholder (`%FD%`) instead of a root-owned `/dev/tun` device.
    */
-  private fun writeMihomoConfig(program: String, profile: String, mixedPort: Int): File {
+  private fun writeMihomoConfig(program: String, profile: String, mixedPort: Int, logLevel: String): File {
     val templatePath = profiles.profileDir(program, profile).resolve("config.yaml")
-    val text = if (templatePath.isFile) {
-      // Drop a root-style `tun:` block so its `device:` never survives into
-      // non-root mode; the daemon's own block is appended below.
-      templatePath.readText()
-        .replace(Regex("(?m)^tun:[\\s\\S]*?(?=^[^ \\t#]|\\z)"), "")
-        .trimEnd() + "\n"
+    val raw = if (templatePath.isFile) runCatching { templatePath.readText() }.getOrDefault("") else ""
+    // The controller port is read from the *unsanitized* config, exactly as the
+    // daemon does (`build_profile_plan`), because sanitize drops the
+    // `external-controller` line and the header below re-adds it on loopback.
+    val controllerPort = parseExternalControllerPort(raw)
+
+    val body = if (raw.isNotBlank()) {
+      sanitizeMihomoYaml(raw)
     } else {
       // Minimal mihomo config so the tunnel at least comes up; the real one is
-      // filled in by the profile editor (phase 2).
+      // filled in by the profile editor.
       buildString {
         appendLine("proxies: []")
         appendLine("proxy-groups: []")
@@ -916,8 +940,16 @@ class NonRootEngine(context: Context) {
       }
     }
 
-    val sb = StringBuilder(text)
-    if (!text.contains("mixed-port:")) sb.insert(0, "mixed-port: $mixedPort\n")
+    val sb = StringBuilder()
+    sb.appendLine("# ZDT-D managed runtime config. Do not edit this file; edit config.yaml instead.")
+    sb.appendLine("mixed-port: $mixedPort")
+    sb.appendLine("allow-lan: false")
+    sb.appendLine("bind-address: 127.0.0.1")
+    sb.appendLine("log-level: ${normalizeMihomoLogLevel(logLevel)}")
+    controllerPort?.let { sb.appendLine("external-controller: 127.0.0.1:$it") }
+    sb.appendLine()
+    sb.append(body)
+    if (sb.isEmpty() || sb.last() != '\n') sb.appendLine()
     // %FD% is replaced by VpnEngineService with the real VpnService descriptor.
     sb.appendLine("tun:")
     sb.appendLine("  enable: true")
@@ -930,6 +962,85 @@ class NonRootEngine(context: Context) {
     out.parentFile?.mkdirs()
     out.writeText(sb.toString())
     return out
+  }
+
+  /**
+   * Kotlin port of mihomo.rs `sanitize_mihomo_yaml`: drops the top-level blocks
+   * and scalars ZDT-D owns. `tun`/`iptables` would fight VpnService (iptables
+   * also needs root), and the port/bind/log keys are re-emitted by the managed
+   * header above, so keeping the user's copies would let them contradict the
+   * profile settings — exactly what the daemon prevents.
+   */
+  private fun sanitizeMihomoYaml(raw: String): String {
+    val out = StringBuilder()
+    // `str::lines()` never yields a trailing empty element; match that so a
+    // final newline does not become an extra blank line.
+    val lines = raw.split("\r\n|\n|\r".toRegex()).let { if (it.isNotEmpty() && it.last().isEmpty()) it.dropLast(1) else it }
+    var i = 0
+    while (i < lines.size) {
+      val line = lines[i]
+      val trimmed = line.trimStart()
+      val indent = line.length - trimmed.length
+      if (indent == 0) {
+        topLevelMihomoKey(trimmed)?.let { key ->
+          if (key in MIHOMO_FORBIDDEN_BLOCKS) {
+            // Skip the whole indented block (blank/comment lines included).
+            i++
+            while (i < lines.size) {
+              val next = lines[i]
+              val nt = next.trimStart()
+              if (nt.isEmpty() || nt.startsWith('#')) { i++; continue }
+              if (next.length - nt.length == 0) break
+              i++
+            }
+            continue
+          }
+          if (key in MIHOMO_FORBIDDEN_SCALARS) { i++; continue }
+        }
+      }
+      out.appendLine(line)
+      i++
+    }
+    return out.toString()
+  }
+
+  /** Kotlin port of mihomo.rs `top_level_key`. */
+  private fun topLevelMihomoKey(trimmed: String): String? {
+    if (trimmed.isEmpty() || trimmed.startsWith('#') || trimmed.startsWith('-')) return null
+    return trimmed.substringBefore(':', "").trim().ifBlank { null }
+  }
+
+  /** Kotlin port of mihomo.rs `parse_external_controller_port`. */
+  private fun parseExternalControllerPort(raw: String): Int? {
+    for (rawLine in raw.lineSequence()) {
+      val trimmed = rawLine.trimStart()
+      if (trimmed.length != rawLine.length) continue // indent != 0
+      val key = topLevelMihomoKey(trimmed) ?: continue
+      if (key != "external-controller") continue
+      return parsePortFromYamlScalar(trimmed.substringAfter(':'))
+    }
+    return null
+  }
+
+  /** Kotlin port of mihomo.rs `parse_port_from_yaml_scalar`. */
+  private fun parsePortFromYamlScalar(value: String): Int? {
+    var v = value.trim()
+    if (v.isEmpty()) return null
+    val hashIdx = v.indexOf(" #")
+    if (hashIdx >= 0) v = v.substring(0, hashIdx)
+    v = v.trim().trim('"').trim('\'').trim()
+    if (v.isEmpty()) return null
+    v.toIntOrNull()?.let { return if (it in 1..65535) it else null }
+    val idx = v.lastIndexOf(':')
+    if (idx < 0) return null
+    val portS = v.substring(idx + 1).trim().trim(']').trim('"').trim('\'')
+    return portS.toIntOrNull()?.takeIf { it in 1..65535 }
+  }
+
+  /** Accepts exactly the levels the daemon's `validate_loglevel` allows. */
+  private fun normalizeMihomoLogLevel(raw: String): String {
+    val v = raw.trim().lowercase()
+    return if (v in MIHOMO_LOG_LEVELS) v else "info"
   }
 
   // ----- helpers -----
