@@ -25,6 +25,40 @@ Goals (approved by the user):
 So the non-root version = **`VpnService` + userspace engines**. The DPI bypass
 that is lost is only the NFQUEUE part; the SOCKS5/VPN engines keep working.
 
+## Autonomous operation (no daemon required)
+
+The app never depends on the daemon being reachable to stay usable:
+
+- **Mode selection** happens before any daemon call (`RootAvailability.detect`),
+  so a device without the module goes straight to the userspace engine.
+- **Fallback offer.** When the module *is* installed but its service never
+  answers, the startup screen and the runtime "service unavailable" dialog both
+  offer **Continue without module** (`switchToNonRootFallback`). It activates
+  the same userspace runtime as the first-run mode selector and records the
+  choice in `preferred_runtime_mode`, so the app keeps working autonomously
+  instead of sitting on a dead screen.
+- **Profile management without the daemon.** In non-root mode the app-private
+  `working_folder` mirror is the source of truth, so `NonRootProfiles` builds
+  the same `ApiModels.Program` list the daemon would have returned
+  (`listPrograms`), and create / enable / delete operate on the local files
+  (`createProfile`, `setProfileEnabled`, `deleteProfile`). The profile screens
+  therefore work identically with no daemon running.
+- **Profile editors without the daemon.** Every editor screen talks in daemon
+  API paths (`/api/programs/<p>/profiles/<n>/setting`, `.../proxy`,
+  `.../apps/user`, `.../config`, `.../servers/<s>/setting|config`). In
+  non-root mode `NonRootProfiles.fileForApiPath` resolves those paths against
+  the same file tree the daemon uses, so `loadJsonData` / `saveJsonData` /
+  `loadText` / `saveText` read and write the local mirror instead of the
+  network. The server list (`.../servers`) is synthesized from the on-disk
+  `server/<name>/setting.json` entries, the profile list (`.../profiles`) from
+  `active.json`, and per-server create / delete (`createServer` /
+  `deleteServer`) manage those directories locally.
+- **Custom programs (`myprogram`) without the daemon.** The binary list
+  (`.../bin`), upload and delete operate on the profile's local `bin/`
+  directory, so user-supplied engines keep working with no daemon.
+- **Status** is synthesized locally (`NonRootStatus.report`) from the tunnel
+  state, so Home, the Quick Settings tile and the widgets keep rendering.
+
 ## Architecture
 
 ```
@@ -195,10 +229,40 @@ Asset ↔ binary names (`NonRootBinaries.Engine`):
   service declaration, not as a runtime/requestable app permission.
 - The VPN must install a real destination route (`0.0.0.0/0` for the current
   IPv4 backend). A route only to the synthetic TUN address creates the
-  interface but does not carry application traffic through it.
+  interface but does not carry application traffic through it. This mirrors the
+  root daemon, which adds `0.0.0.0/0` to every `netd` VPN profile
+  (`vpn_netd.rs::apply_one_profile`).
+- The synthetic TUN address must stay outside the daemon's per-engine address
+  pools, otherwise a non-root tunnel can collide with a root profile on a
+  device that has both installed. The daemon hands out `/30` networks from
+  `sing-box` `172.31.240.0`, `hysteria2` `172.31.232.0`, `mieru` `172.31.252.0`,
+  `mihomo` `198.18.140.0` and `tun2socks` `198.18.100.0`; the non-root fallback
+  is therefore `172.31.225.2`, below the lowest pool.
 - The descriptor returned by `Builder.establish()` is detached exactly once.
   Calling `detachFd()` for logging and again when starting the engine invalidates
   the descriptor and makes every non-root engine fail at runtime.
 - Root detection must perform the module/token check through `su` when the
   ordinary app process cannot read `/data/adb`; otherwise a healthy rooted
   installation is indistinguishable from a non-root device.
+
+### Parity with the root daemon
+
+The non-root resolver mirrors the daemon's per-program logic so a profile copied
+between the two sides behaves the same. Each helper below is a Kotlin port of
+the named daemon function:
+
+| Concern | Daemon | Non-root resolver |
+|---|---|---|
+| `config.txt` argv | `common.rs::normalize_config_args` | `normalizeArgs` |
+| sing-box DNS/route | `singbox.rs::normalize_singbox_common` | `normalizeSingBoxCommon` |
+| sing-box t2s config | `singbox.rs::normalize_singbox_config_for_t2s` | `writeSingBoxConfig` |
+| mieru config | `mieru.rs::sync_mieru_config_value` | `syncMieruConfig` |
+| hysteria2 config | `hysteria2.rs::normalize_hysteria2_config_for_socks5` | `writeHysteria2Config` |
+| hysteria2 log level | `hysteria2.rs::normalize_log_level` | `normalizeHysteria2LogLevel` |
+| D2S listener port | `dnscrypt.rs` reuse-else-`first_free_d2s_port(11990)` | `parseActiveD2sListener` / `firstFreeD2sPort` |
+| D2S `proxy` line | `dnscrypt.rs::connect_d2s_proxy_text` | `connectD2sProxy` |
+| dnscrypt listen port | `dnscrypt.rs::parse_listen_port` | `parseDnscryptListenPort` |
+| wireproxy BindAddress | `wireproxy.rs::parse_socks5_bind_address_str` | `parseWireproxySocksPort` |
+| tor SocksPort | `tor.rs::parse_socks_port_from_str` | `parseTorSocksPort` |
+| tun2socks log level | per-program field (`tun2socks_loglevel` / `tun2proxy_loglevel` / `loglevel`) | `tun2socksLogLevel` |
+| tunnel route | `0.0.0.0/0` per netd profile | `Builder.addRoute("0.0.0.0", 0)` |

@@ -150,6 +150,12 @@ interface ZdtdActions {
   /** Retry the daemon startup handshake shown after app launch. */
   fun retryDaemonStartup()
 
+  /**
+   * Switch from a non-responding root daemon to the autonomous userspace
+   * engine, so the app stays usable when the module service is unreachable.
+   */
+  fun switchToNonRootFallback()
+
   fun retryRoot()
   /** Select userspace/VpnService mode during first setup instead of requesting root. */
   fun useNonRootMode()

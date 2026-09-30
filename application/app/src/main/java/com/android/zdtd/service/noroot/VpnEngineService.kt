@@ -86,10 +86,12 @@ class VpnEngineService : VpnService() {
       .setSession(SESSION_NAME)
       .setMtu(MTU)
       .addAddress(cfg.tunAddress, 32)
-      // The engine is a local proxy: route only what it must handle. Keeping
-      // the route scope narrow avoids a full-device VPN (and the Android
-      // "always-on VPN" prompt) for what is essentially a local bypass tunnel.
-      .addRoute(cfg.tunAddress, 32)
+      // The engine is a local proxy that must receive the routed apps' traffic,
+      // so the interface needs a real default route. This mirrors the daemon,
+      // which adds `0.0.0.0/0` to every netd VPN profile (vpn_netd.rs
+      // `apply_one_profile`). A route to the TUN address alone would create the
+      // interface but carry no application traffic (see docs/NON_ROOT.md).
+      .addRoute("0.0.0.0", 0)
 
     // Per-app routing: the non-root equivalent of the daemon's uid list.
     // An empty list means "all apps" (VpnService default).
@@ -340,7 +342,8 @@ class VpnEngineService : VpnService() {
     private const val SESSION_NAME = "ZDT-D"
     private const val MTU = 1500
     private const val PORT_WAIT_MS = 20_000L
-    const val DEFAULT_TUN_ADDRESS = "172.31.240.2"
+    // Outside every daemon engine pool; see NonRootEngine.tunAddressFor.
+    const val DEFAULT_TUN_ADDRESS = "172.31.225.2"
 
     const val ACTION_START = "com.android.zdtd.service.action.NOROOT_START"
     const val ACTION_STOP = "com.android.zdtd.service.action.NOROOT_STOP"

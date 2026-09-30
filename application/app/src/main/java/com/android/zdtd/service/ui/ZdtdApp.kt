@@ -248,6 +248,7 @@ private fun StartupDialogHost(
   setup: SetupUiState,
   onRetry: () -> Unit,
   onReinstall: () -> Unit,
+  onUseNonRoot: () -> Unit,
   onExpandUpdate: () -> Unit,
   onUpdate: () -> Unit,
   onSkipUpdate: () -> Unit,
@@ -297,6 +298,8 @@ private fun StartupDialogHost(
     setup = setup,
     onRetry = onRetry,
     onReinstall = onReinstall,
+    onUseNonRoot = onUseNonRoot,
+    showFallbackOffer = uiState.daemonFallbackOfferVisible,
     onExpandUpdate = onExpandUpdate,
     onUpdate = onUpdate,
     onSkipUpdate = onSkipUpdate,
@@ -312,6 +315,8 @@ private fun StartupFullscreenContent(
   setup: SetupUiState,
   onRetry: () -> Unit,
   onReinstall: () -> Unit,
+  onUseNonRoot: () -> Unit,
+  showFallbackOffer: Boolean,
   onExpandUpdate: () -> Unit,
   onUpdate: () -> Unit,
   onSkipUpdate: () -> Unit,
@@ -465,6 +470,14 @@ private fun StartupFullscreenContent(
                   modifier = Modifier.fillMaxWidth(),
                 ) {
                   Text(stringResource(R.string.common_retry))
+                }
+                if (showFallbackOffer) {
+                  OutlinedButton(
+                    onClick = onUseNonRoot,
+                    modifier = Modifier.fillMaxWidth(),
+                  ) {
+                    Text(stringResource(R.string.daemon_fallback_action))
+                  }
                 }
                 OutlinedButton(
                   onClick = onReinstall,
@@ -647,7 +660,7 @@ private fun StartupStagePill(text: String, active: Boolean, done: Boolean) {
 }
 
 @Composable
-private fun DaemonUnavailableDialogHost(uiState: UiState) {
+private fun DaemonUnavailableDialogHost(uiState: UiState, onUseNonRoot: () -> Unit) {
   if (!uiState.daemonUnavailableVisible) return
 
   Dialog(
@@ -690,6 +703,14 @@ private fun DaemonUnavailableDialogHost(uiState: UiState) {
           color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         CircularProgressIndicator()
+        if (uiState.daemonFallbackOfferVisible) {
+          OutlinedButton(
+            onClick = onUseNonRoot,
+            modifier = Modifier.fillMaxWidth(),
+          ) {
+            Text(stringResource(R.string.daemon_fallback_action))
+          }
+        }
       }
     }
   }
@@ -1194,7 +1215,10 @@ private fun MainShell(
     !showDeleteModuleNext &&
     programLogsTarget == null
 
-  DaemonUnavailableDialogHost(uiState = uiState)
+  DaemonUnavailableDialogHost(
+    uiState = uiState,
+    onUseNonRoot = actions::switchToNonRootFallback,
+  )
 
   if (backup.externalRestorePromptVisible) {
     AlertDialog(
@@ -1941,6 +1965,7 @@ private fun MainShell(
         setup = setup,
         onRetry = actions::retryDaemonStartup,
         onReinstall = actions::openModuleInstaller,
+        onUseNonRoot = actions::switchToNonRootFallback,
         onExpandUpdate = actions::showUpdatePrompt,
         onUpdate = actions::openModuleInstaller,
         onSkipUpdate = actions::dismissUpdatePrompt,

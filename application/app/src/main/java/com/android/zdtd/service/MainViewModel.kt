@@ -217,6 +217,12 @@ data class UiState(
   val nonRootMode: Boolean = false,
   val nonRootRunning: Boolean = false,
   val nonRootConsentIntent: android.content.Intent? = null,
+  /**
+   * Offered when the ZDT-D module is installed but its daemon never answers.
+   * Lets the user switch to the autonomous userspace engine instead of being
+   * stuck on the "service unavailable" screen.
+   */
+  val daemonFallbackOfferVisible: Boolean = false,
 )
 
 private data class StartupTimingPlan(
@@ -336,6 +342,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
   // Non-root engine. Created lazily: on a rooted device this is never touched
   // and no VpnService machinery is initialized.
   private val nonRootEngine by lazy { com.android.zdtd.service.noroot.NonRootEngine(ctx) }
+  // App-private profile mirror. In non-root mode this *is* the source of truth
+  // (the daemon is unreachable), so profile screens read and write it directly.
+  private val nonRootProfiles by lazy { com.android.zdtd.service.noroot.NonRootProfiles(ctx) }
   @Volatile private var rootModeResolved: Boolean = false
 
   private val hotspotSettingsMutex = Mutex()
@@ -1684,6 +1693,9 @@ private fun clearDownloadedUpdateApk() {
       startupJob?.cancel()
       startupJob = null
       _uiState.update { it.copy(startup = StartupUiState.hidden(), daemonUnavailableVisible = false) }
+      // The profile screens read `programs`; without a daemon there is no
+      // /api/programs to fetch, so populate it from the local mirror.
+      launchIO { refreshProgramsNow(force = true) }
       if (activeMainTabHint == "STATS") startStatsPowerSampling()
       startStatusPolling()
       return
@@ -1830,7 +1842,13 @@ private fun clearDownloadedUpdateApk() {
         val showOverlay = startupCompleted && appVisible
         val nextVisible = if (showOverlay) true else st.daemonUnavailableVisible
         if (!st.daemonOnline && st.daemonUnavailableVisible == nextVisible) st
-        else st.copy(daemonOnline = false, daemonUnavailableVisible = nextVisible)
+        // The module is installed (we got past setup), so the userspace engine
+        // can take over even though the daemon has gone away at runtime.
+        else st.copy(
+          daemonOnline = false,
+          daemonUnavailableVisible = nextVisible,
+          daemonFallbackOfferVisible = moduleDirExists(),
+        )
       }
     }
   }
@@ -1871,9 +1889,14 @@ private fun clearDownloadedUpdateApk() {
     } else {
       str(R.string.startup_daemon_failed_module_missing)
     }
+    // The module is present but its service never answered: the root controls
+    // are unusable, yet the user could still run the autonomous userspace
+    // engine. Offer that instead of leaving them on a dead screen.
+    val canFallback = moduleFound && structureOk
     _uiState.update { st ->
       st.copy(
         daemonOnline = false,
+        daemonFallbackOfferVisible = canFallback,
         startup = StartupUiState(
           visible = true,
           stage = StartupStage.FAILED,
@@ -1919,6 +1942,39 @@ private fun clearDownloadedUpdateApk() {
   override fun retryDaemonStartup() {
     if (_rootState.value != RootState.GRANTED || !isSetupDone() || !appVisible) return
     startStartupHandshake()
+  }
+
+  override fun switchToNonRootFallback() {
+    // The module is installed but its daemon is unreachable. Reuse the same
+    // userspace runtime the first-run "use non-root" choice activates, so the
+    // app keeps working autonomously: profiles are read from the app-private
+    // mirror and the tunnel runs behind a VpnService, with no daemon involved.
+    if (_uiState.value.nonRootMode) {
+      _uiState.update { it.copy(daemonFallbackOfferVisible = false) }
+      return
+    }
+    log("WARN", "root daemon unreachable; switching to userspace mode")
+    root.setPreferredRuntimeMode("non_root")
+    rootModeResolved = true
+    startupJob?.cancel()
+    startupJob = null
+    startupCompleted = true
+    statusPollFailureCount = 0
+    _setup.update { it.copy(step = SetupStep.DONE) }
+    _uiState.update {
+      it.copy(
+        nonRootMode = true,
+        daemonOnline = false,
+        daemonUnavailableVisible = false,
+        daemonFallbackOfferVisible = false,
+        nonRootConsentIntent = null,
+        startup = StartupUiState.hidden(),
+      )
+    }
+    launchIO {
+      refreshNonRootStatus()
+      withContext(Dispatchers.Main.immediate) { maybeStartForegroundJobs() }
+    }
   }
 
   override fun retryRoot() {
@@ -6100,7 +6156,15 @@ private fun shQuote(s: String): String {
   }
 
   private suspend fun refreshProgramsNow(force: Boolean = false) {
-    if (_uiState.value.nonRootMode) return
+    // Non-root mode has no daemon to ask; the app-private mirror is the source
+    // of truth, so build the same Program list locally instead of returning an
+    // empty list and leaving the profile screens unusable.
+    if (_uiState.value.nonRootMode) {
+      val list = withContext(Dispatchers.IO) { nonRootProfiles.listPrograms() }
+      lastProgramsFetchAtMs = System.currentTimeMillis()
+      _uiState.update { it.copy(programs = list) }
+      return
+    }
     val now = System.currentTimeMillis()
     val current = _uiState.value.programs
     if (!force && current.isNotEmpty() && (now - lastProgramsFetchAtMs) < programsFreshMs) return
@@ -6284,11 +6348,26 @@ private fun shQuote(s: String): String {
 
   override fun setProfileEnabled(programId: String, profile: String, enabled: Boolean, onDone: (Boolean) -> Unit) {
     launchIO {
-      val ok = runCatching { api.setProfileEnabled(programId, profile, enabled) }.getOrDefault(false)
+      val nonRoot = _uiState.value.nonRootMode
+      val ok = if (nonRoot) {
+        withContext(Dispatchers.IO) { nonRootProfiles.setProfileEnabled(programId, profile, enabled) }
+      } else {
+        runCatching { api.setProfileEnabled(programId, profile, enabled) }.getOrDefault(false)
+      }
       if (ok) {
         log("OK", "$programId/$profile enabled=$enabled (apply after stop/start)")
-        lastProgramsFetchAtMs = 0L
-        refreshPrograms()
+        if (nonRoot) {
+          // Reflect the toggle immediately: there is no daemon to re-fetch from.
+          _uiState.update { st ->
+            st.copy(programs = st.programs.map { p ->
+              if (p.id == programId) p.copy(profiles = p.profiles.map { if (it.name == profile) it.copy(enabled = enabled) else it })
+              else p
+            })
+          }
+        } else {
+          lastProgramsFetchAtMs = 0L
+          refreshPrograms()
+        }
       } else {
         log("ERR", "$programId/$profile toggle failed")
       }
@@ -6298,10 +6377,15 @@ private fun shQuote(s: String): String {
 
   override fun deleteProfile(programId: String, profile: String, onDone: (Boolean) -> Unit) {
     launchIO {
-      val ok = runCatching { api.deleteProfile(programId, profile) }.getOrDefault(false)
+      val nonRoot = _uiState.value.nonRootMode
+      val ok = if (nonRoot) {
+        withContext(Dispatchers.IO) { nonRootProfiles.deleteProfile(programId, profile) }
+      } else {
+        runCatching { api.deleteProfile(programId, profile) }.getOrDefault(false)
+      }
       if (ok) {
         log("OK", "$programId/$profile deleted")
-        lastProgramsFetchAtMs = 0L
+        if (nonRoot) lastProgramsFetchAtMs = 0L
         refreshPrograms()
       } else {
         log("ERR", "$programId/$profile delete failed")
@@ -6337,6 +6421,24 @@ private fun shQuote(s: String): String {
 
   override fun createNextProfile(programId: String, onDone: (String?) -> Unit) {
     launchIO {
+      val nonRoot = _uiState.value.nonRootMode
+      if (nonRoot) {
+        // No daemon to pick the next name or write the layout; do both locally.
+        val guardPrograms = _uiState.value.programs
+        val requestedName = if (programId in guardedProfileProgramIds) nextGlobalProfileName(programId, guardPrograms) else ""
+        val name = requestedName.ifBlank { nextGlobalProfileName(programId, guardPrograms) }
+        val created = withContext(Dispatchers.IO) { nonRootProfiles.createProfile(programId, name) }
+        if (created == null) {
+          log("ERR", "$programId: create profile failed")
+          withContext(Dispatchers.Main.immediate) { onDone(null) }
+          return@launchIO
+        }
+        lastProgramsFetchAtMs = 0L
+        refreshPrograms()
+        log("OK", "$programId/$created created (apply after stop/start)")
+        withContext(Dispatchers.Main.immediate) { onDone(created) }
+        return@launchIO
+      }
       val guardPrograms = freshestProgramsForProfileGuard()
       val requestedName = if (programId in guardedProfileProgramIds) nextGlobalProfileName(programId, guardPrograms) else ""
       val before = guardPrograms.firstOrNull { it.id == programId }?.profiles?.map { it.name }?.toSet().orEmpty()
@@ -6366,6 +6468,20 @@ private fun shQuote(s: String): String {
   override fun createNamedProfile(programId: String, profile: String, onDone: (String?) -> Unit) {
     launchIO {
       val p = profile.trim()
+      val nonRoot = _uiState.value.nonRootMode
+      if (nonRoot) {
+        val created = withContext(Dispatchers.IO) { nonRootProfiles.createProfile(programId, p) }
+        if (created == null) {
+          log("ERR", "$programId: create profile '$p' failed")
+          withContext(Dispatchers.Main.immediate) { onDone(null) }
+          return@launchIO
+        }
+        lastProgramsFetchAtMs = 0L
+        refreshPrograms()
+        log("OK", "$programId/$created created (apply after stop/start)")
+        withContext(Dispatchers.Main.immediate) { onDone(created) }
+        return@launchIO
+      }
       val guardPrograms = freshestProgramsForProfileGuard()
       if (programId in guardedProfileProgramIds) {
         val owner = findProfileNameOwnerAcrossPrograms(guardPrograms, p, excludeProgramId = programId)
@@ -6402,6 +6518,16 @@ private fun shQuote(s: String): String {
     launchIO {
       val safeProfile = profile.trim()
       val safeServer = server.trim()
+      // Non-root mode has no daemon: create the server directory locally.
+      if (_uiState.value.nonRootMode) {
+        val created = withContext(Dispatchers.IO) {
+          nonRootProfiles.createServer("sing-box", safeProfile, safeServer)
+        }
+        if (created != null) log("OK", "sing-box/$safeProfile/$safeServer created (apply after stop/start)")
+        else log("ERR", "sing-box/$safeProfile/$safeServer create failed")
+        withContext(Dispatchers.Main.immediate) { onDone(created) }
+        return@launchIO
+      }
       val ok = runCatching { api.createSingBoxServer(safeProfile, safeServer) }.getOrDefault(false)
       if (ok) {
         log("OK", "sing-box/$safeProfile/$safeServer created (apply after stop/start)")
@@ -6417,6 +6543,16 @@ private fun shQuote(s: String): String {
     launchIO {
       val safeProfile = profile.trim()
       val safeServer = server.trim()
+      // Non-root mode has no daemon: remove the server directory locally.
+      if (_uiState.value.nonRootMode) {
+        val ok = withContext(Dispatchers.IO) {
+          nonRootProfiles.deleteServer("sing-box", safeProfile, safeServer)
+        }
+        if (ok) log("OK", "sing-box/$safeProfile/$safeServer deleted")
+        else log("ERR", "sing-box/$safeProfile/$safeServer delete failed")
+        withContext(Dispatchers.Main.immediate) { onDone(ok) }
+        return@launchIO
+      }
       val ok = runCatching { api.deleteSingBoxServer(safeProfile, safeServer) }.getOrDefault(false)
       if (ok) {
         log("OK", "sing-box/$safeProfile/$safeServer deleted")
@@ -6432,6 +6568,16 @@ private fun shQuote(s: String): String {
     launchIO {
       val safeProfile = profile.trim()
       val safeServer = server.trim()
+      // Non-root mode has no daemon: create the server directory locally.
+      if (_uiState.value.nonRootMode) {
+        val created = withContext(Dispatchers.IO) {
+          nonRootProfiles.createServer("hysteria2", safeProfile, safeServer)
+        }
+        if (created != null) log("OK", "hysteria2/$safeProfile/$safeServer created (apply after stop/start)")
+        else log("ERR", "hysteria2/$safeProfile/$safeServer create failed")
+        withContext(Dispatchers.Main.immediate) { onDone(created) }
+        return@launchIO
+      }
       val ok = runCatching { api.createHysteria2Server(safeProfile, safeServer) }.getOrDefault(false)
       if (ok) {
         log("OK", "hysteria2/$safeProfile/$safeServer created (apply after stop/start)")
@@ -6447,6 +6593,16 @@ private fun shQuote(s: String): String {
     launchIO {
       val safeProfile = profile.trim()
       val safeServer = server.trim()
+      // Non-root mode has no daemon: remove the server directory locally.
+      if (_uiState.value.nonRootMode) {
+        val ok = withContext(Dispatchers.IO) {
+          nonRootProfiles.deleteServer("hysteria2", safeProfile, safeServer)
+        }
+        if (ok) log("OK", "hysteria2/$safeProfile/$safeServer deleted")
+        else log("ERR", "hysteria2/$safeProfile/$safeServer delete failed")
+        withContext(Dispatchers.Main.immediate) { onDone(ok) }
+        return@launchIO
+      }
       val ok = runCatching { api.deleteHysteria2Server(safeProfile, safeServer) }.getOrDefault(false)
       if (ok) {
         log("OK", "hysteria2/$safeProfile/$safeServer deleted")
@@ -6461,6 +6617,27 @@ private fun shQuote(s: String): String {
     launchIO {
       val safeProfile = profile.trim()
       val requested = server.trim()
+      // Non-root mode has no daemon: create the server directory locally.
+      // The daemon auto-names a blank request; mirror that with a simple counter.
+      if (_uiState.value.nonRootMode) {
+        val name = withContext(Dispatchers.IO) {
+          if (requested.isNotBlank()) {
+            nonRootProfiles.createServer("wireproxy", safeProfile, requested)
+          } else {
+            val existing = nonRootProfiles.readServersJson("wireproxy", safeProfile)
+              ?.optJSONArray("servers")?.let { arr ->
+                (0 until arr.length()).mapNotNull { arr.optJSONObject(it)?.optString("name") }
+              }.orEmpty()
+            var n = 1
+            while ("server$n" in existing) n++
+            nonRootProfiles.createServer("wireproxy", safeProfile, "server$n")
+          }
+        }
+        if (name != null) log("OK", "wireproxy/$safeProfile/$name created")
+        else log("ERR", "wireproxy/$safeProfile/${requested.ifBlank { "(new)" }} create failed")
+        withContext(Dispatchers.Main.immediate) { onDone(name) }
+        return@launchIO
+      }
       val beforeObj = runCatching { api.getJsonData("/api/programs/wireproxy/profiles/${URLEncoder.encode(safeProfile, "UTF-8")}/servers") }.getOrNull()
       val before = mutableSetOf<String>()
       val beforeArr = beforeObj?.optJSONArray("servers")
@@ -6500,6 +6677,16 @@ private fun shQuote(s: String): String {
     launchIO {
       val safeProfile = profile.trim()
       val safeServer = server.trim()
+      // Non-root mode has no daemon: remove the server directory locally.
+      if (_uiState.value.nonRootMode) {
+        val ok = withContext(Dispatchers.IO) {
+          nonRootProfiles.deleteServer("wireproxy", safeProfile, safeServer)
+        }
+        if (ok) log("OK", "wireproxy/$safeProfile/$safeServer deleted")
+        else log("ERR", "wireproxy/$safeProfile/$safeServer delete failed")
+        withContext(Dispatchers.Main.immediate) { onDone(ok) }
+        return@launchIO
+      }
       val ok = runCatching { api.deleteWireProxyServer(safeProfile, safeServer) }.getOrDefault(false)
       if (ok) {
         log("OK", "wireproxy/$safeProfile/$safeServer deleted")
@@ -6512,23 +6699,39 @@ private fun shQuote(s: String): String {
 
   override fun uploadMyProgramBin(profile: String, filename: String, file: File, onDone: (Boolean) -> Unit) {
     launchIO {
-      val safeProfile = URLEncoder.encode(profile.trim(), "UTF-8")
+      val safeProfile = profile.trim()
+      // Non-root mode has no daemon: copy the binary into the profile's bin dir.
+      if (_uiState.value.nonRootMode) {
+        val ok = withContext(Dispatchers.IO) { nonRootProfiles.uploadMyProgramBin(safeProfile, filename, file) }
+        if (ok) log("OK", "myprogram/$safeProfile/bin/$filename uploaded") else log("ERR", "myprogram/$safeProfile/bin/$filename upload failed")
+        withContext(Dispatchers.Main.immediate) { onDone(ok) }
+        return@launchIO
+      }
+      val encProfile = URLEncoder.encode(safeProfile, "UTF-8")
       val ok = runCatching {
-        api.uploadMultipart("/api/programs/myprogram/profiles/$safeProfile/bin/upload", filename, file)
+        api.uploadMultipart("/api/programs/myprogram/profiles/$encProfile/bin/upload", filename, file)
       }.getOrDefault(false)
-      if (ok) log("OK", "myprogram/$profile/bin/$filename uploaded") else log("ERR", "myprogram/$profile/bin/$filename upload failed")
+      if (ok) log("OK", "myprogram/$safeProfile/bin/$filename uploaded") else log("ERR", "myprogram/$safeProfile/bin/$filename upload failed")
       withContext(Dispatchers.Main.immediate) { onDone(ok) }
     }
   }
 
   override fun deleteMyProgramBin(profile: String, filename: String, onDone: (Boolean) -> Unit) {
     launchIO {
-      val safeProfile = URLEncoder.encode(profile.trim(), "UTF-8")
+      val safeProfile = profile.trim()
+      // Non-root mode has no daemon: remove the binary from the profile's bin dir.
+      if (_uiState.value.nonRootMode) {
+        val ok = withContext(Dispatchers.IO) { nonRootProfiles.deleteMyProgramBin(safeProfile, filename) }
+        if (ok) log("OK", "myprogram/$safeProfile/bin/$filename deleted") else log("ERR", "myprogram/$safeProfile/bin/$filename delete failed")
+        withContext(Dispatchers.Main.immediate) { onDone(ok) }
+        return@launchIO
+      }
+      val encProfile = URLEncoder.encode(safeProfile, "UTF-8")
       val safeFile = URLEncoder.encode(filename.trim(), "UTF-8")
       val ok = runCatching {
-        api.deletePath("/api/programs/myprogram/profiles/$safeProfile/bin/$safeFile")
+        api.deletePath("/api/programs/myprogram/profiles/$encProfile/bin/$safeFile")
       }.getOrDefault(false)
-      if (ok) log("OK", "myprogram/$profile/bin/$filename deleted") else log("ERR", "myprogram/$profile/bin/$filename delete failed")
+      if (ok) log("OK", "myprogram/$safeProfile/bin/$filename deleted") else log("ERR", "myprogram/$safeProfile/bin/$filename delete failed")
       withContext(Dispatchers.Main.immediate) { onDone(ok) }
     }
   }
@@ -6571,7 +6774,13 @@ private fun shQuote(s: String): String {
 
   override fun loadText(path: String, onDone: (String?) -> Unit) {
     launchIO {
-      val content = runCatching { api.getTextContent(path) }.getOrNull()
+      // Non-root mode has no daemon: read the app-private mirror directly so
+      // the profile editors can still load configs.
+      val content = if (_uiState.value.nonRootMode) {
+        withContext(Dispatchers.IO) { nonRootProfiles.readTextPath(path) }
+      } else {
+        runCatching { api.getTextContent(path) }.getOrNull()
+      }
       if (content == null) log("ERR", "$path: load failed")
       withContext(Dispatchers.Main.immediate) { onDone(content) }
     }
@@ -6590,6 +6799,14 @@ private fun shQuote(s: String): String {
 
   override fun saveText(path: String, content: String, onDone: (Boolean) -> Unit) {
     launchIO {
+      // Non-root mode has no daemon: write to the app-private mirror so profile
+      // edits persist and are picked up by the userspace engine on next start.
+      if (_uiState.value.nonRootMode) {
+        val ok = withContext(Dispatchers.IO) { nonRootProfiles.writeTextPath(path, content) }
+        if (ok) log("OK", "$path: saved (apply after stop/start)") else log("ERR", "$path: save failed")
+        withContext(Dispatchers.Main.immediate) { onDone(ok) }
+        return@launchIO
+      }
       val ok = runCatching { api.putTextContent(path, content) }.getOrDefault(false)
       if (ok) {
         if (isRuntimeApplyAppListPath(path)) {
@@ -6629,12 +6846,21 @@ private fun shQuote(s: String): String {
           .mapValues { (_, pkgs) -> pkgs.map { it.trim() }.filter { it.isNotEmpty() }.toSet() }
           .filterValues { it.isNotEmpty() }
 
+        // Non-root mode has no daemon: resolve conflicts against the app-private
+        // mirror using the same read/modify/write flow.
+        val nonRoot = _uiState.value.nonRootMode
+        fun readText(p: String): String =
+          if (nonRoot) nonRootProfiles.readTextPath(p).orEmpty() else api.getTextContent(p)
+        suspend fun writeText(p: String, content: String): Boolean =
+          if (nonRoot) withContext(Dispatchers.IO) { nonRootProfiles.writeTextPath(p, content) }
+          else api.putTextContent(p, content)
+
         val originals = linkedMapOf<String, String>()
         for ((sourcePath, packagesToRemove) in removals) {
-          val current = api.getTextContent(sourcePath)
+          val current = readText(sourcePath)
           originals[sourcePath] = current
           val updated = parseAppPackages(current) - packagesToRemove
-          val saved = api.putTextContent(sourcePath, formatAppPackages(updated))
+          val saved = writeText(sourcePath, formatAppPackages(updated))
           if (!saved) {
             log("ERR", "$sourcePath: conflict removal failed")
             return@runCatching false
@@ -6642,11 +6868,11 @@ private fun shQuote(s: String): String {
           log("OK", "$sourcePath: removed moved app(s)")
         }
 
-        val targetSaved = api.putTextContent(targetPath, targetContent)
+        val targetSaved = writeText(targetPath, targetContent)
         if (!targetSaved) {
           log("ERR", "$targetPath: save failed")
           for ((sourcePath, originalContent) in originals) {
-            val rolledBack = runCatching { api.putTextContent(sourcePath, originalContent) }.getOrDefault(false)
+            val rolledBack = writeText(sourcePath, originalContent)
             if (rolledBack) log("OK", "$sourcePath: conflict removal rolled back")
             else log("ERR", "$sourcePath: rollback after target save failure failed")
           }
@@ -6679,6 +6905,13 @@ private fun shQuote(s: String): String {
 
   override fun loadJsonData(path: String, onDone: (JSONObject?) -> Unit) {
     launchIO {
+      // Non-root mode has no daemon: read the app-private mirror directly.
+      if (_uiState.value.nonRootMode) {
+        val obj = withContext(Dispatchers.IO) { nonRootProfiles.readJsonPath(path) }
+        if (obj == null) log("ERR", "$path: load failed")
+        withContext(Dispatchers.Main.immediate) { onDone(obj) }
+        return@launchIO
+      }
       val result = runCatching { api.getJsonData(path) }
       val obj = result.getOrNull()
       if (obj == null) {
@@ -6719,6 +6952,13 @@ private fun shQuote(s: String): String {
 
   override fun saveJsonData(path: String, obj: JSONObject, onDone: (Boolean) -> Unit) {
     launchIO {
+      // Non-root mode has no daemon: write to the app-private mirror.
+      if (_uiState.value.nonRootMode) {
+        val ok = withContext(Dispatchers.IO) { nonRootProfiles.writeJsonPath(path, obj) }
+        if (ok) log("OK", "$path: saved (apply after stop/start)") else log("ERR", "$path: save failed")
+        withContext(Dispatchers.Main.immediate) { onDone(ok) }
+        return@launchIO
+      }
       val result = runCatching { api.putJsonData(path, obj) }
       val ok = result.getOrDefault(false)
       if (ok) {

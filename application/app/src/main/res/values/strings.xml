@@ -738,6 +738,12 @@ Install the module again.</string>
     <string name="daemon_runtime_unavailable_title">Service unavailable</string>
     <string name="daemon_runtime_unavailable_body">The service was paused or stopped. Controls are temporarily unavailable. The app is automatically checking whether the connection is restored.</string>
 
+    <!-- Autonomous (non-root) fallback when the root daemon cannot be reached -->
+    <string name="daemon_fallback_title">Continue without the module?</string>
+    <string name="daemon_fallback_body">The ZDT-D module is installed but its service is not responding, so the root controls are unavailable. You can keep working in userspace mode: it uses the same profiles and runs a local DPI-bypass tunnel through Android\'s VpnService. NFQUEUE strategies stay unavailable until the module service recovers.</string>
+    <string name="daemon_fallback_action">Continue without module</string>
+    <string name="daemon_fallback_active">Userspace mode (module service unavailable)</string>
+
 
     <string name="common_port">Port</string>
     <string name="singbox_port_sync_title">Port sync</string>
