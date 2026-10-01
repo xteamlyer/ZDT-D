@@ -318,12 +318,18 @@ class NonRootEngine(context: Context) {
       if (host != "127.0.0.1" || port <= 0) return null
       return port
     }
+    return null
   }
   private fun resolveTor(): Plan? {
     val program = NonRootProfiles.Program.TOR.id; val root = profiles.programDir(program)
     val enabled = runCatching { JSONObject(root.resolve("enabled.json").readText()).optBoolean("enabled") }.getOrDefault(false)
     val packages = profiles.readLegacyUidList(root.resolve("app/uid/user_program")).orEmpty()
     if (!enabled) return null
+    // tor's torrc lives at the program root (`settings::tor_torrc_path`), and
+    // the daemon falls back to its built-in default when the file is absent
+    // (tor.rs `read_torrc_text`); the non-root side does the same so a fresh
+    // install still resolves a port.
+    val torrc = root.resolve("torrc").takeIf { it.isFile } ?: return null
     // Same parse as the daemon (`parse_socks_port_from_str`): the host must be
     // 127.0.0.1, not just anything before a colon.
     val port = parseTorSocksPort(torrc.readText()) ?: return null
@@ -577,7 +583,8 @@ class NonRootEngine(context: Context) {
   private fun normalizeArgs(raw: String): List<String> {
     // Remove explicit line continuations and turn other line breaks into spaces.
     val it = raw.iterator()
-    val sb = StringBuilder(raw.length)    while (it.hasNext()) {
+    val sb = StringBuilder(raw.length)
+    while (it.hasNext()) {
       val c = it.nextChar()
       if (c == '\\') {
         if (it.hasNext()) {
@@ -803,7 +810,6 @@ class NonRootEngine(context: Context) {
       (0 until arr.length()).mapNotNull { arr.optString(it).ifBlank { null } }
     } ?: listOf("8.8.8.8")
     val primaryDns = dnsServers.firstOrNull { isIpv4(it) } ?: "8.8.8.8"
-
     // Preserve domains already routed to dns-direct by the user's config, then
     // add the DoH endpoint itself plus every outbound server hostname, so none
     // of them is resolved through the fakeip range.
@@ -887,13 +893,28 @@ class NonRootEngine(context: Context) {
    */
   private fun collectSingBoxDirectDnsDomains(root: JSONObject): MutableSet<String> {
     val out = sortedSetOf<String>()
-    val rules = root.optJSONArray("dns")?.optJSONArray("rules") ?: return out
+    // `dns` is a mapping with a `rules` array (singbox.rs reads it via
+    // `as_object()`), so it has to go through optJSONObject here; optJSONArray
+    // would always return null and silently drop every user DNS rule.
+    val rules = root.optJSONObject("dns")?.optJSONArray("rules") ?: return out
     for (i in 0 until rules.length()) {
       val rule = rules.optJSONObject(i) ?: continue
       if (rule.optString("server") != "dns-direct") continue
       collectDomainsFromValue(rule.opt("domain"), out)
     }
     return out
+  }
+
+  /**
+   * Kotlin port of singbox.rs `collect_domains_from_value`: a rule's `domain`
+   * key is either a single string or a (possibly nested) array of them.
+   */
+  private fun collectDomainsFromValue(value: Any?, out: MutableSet<String>) {
+    when (value) {
+      is String -> value.trim().ifBlank { null }?.let { out.add(it) }
+      is JSONArray -> for (i in 0 until value.length()) collectDomainsFromValue(value.opt(i), out)
+      else -> {}
+    }
   }
 
   private fun hasSingBoxOutboundTag(root: JSONObject, tag: String): Boolean {

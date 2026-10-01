@@ -470,8 +470,10 @@ class NonRootProfiles(context: Context) {
    * when the name is unsafe or the directory already exists.
    */
   fun createProfile(program: String, requestedName: String? = null): String? {
-    if (!isSafeProfileName(requestedName)) return null
-    val name = requestedName.trim()
+    // isSafeProfileName rejects null/blank, but narrowing the type here keeps
+    // the rest of the body working on a non-null name.
+    val name = requestedName?.trim()?.ifBlank { null } ?: return null
+    if (!isSafeProfileName(name)) return null
     val dir = profileDir(program, name)
     if (dir.isDirectory) return null
     ensureProfileLayout(program, name)
