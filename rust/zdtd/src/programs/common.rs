@@ -467,6 +467,10 @@ pub struct T2sSpawnConfig<'a> {
     pub wrapped_socks_port: Option<u16>,
     pub wrapped_socks_user: Option<&'a str>,
     pub wrapped_socks_pass: Option<&'a str>,
+    /// Optional RUST_LOG filter applied to the spawned t2s process only
+    /// (e.g. "warn" to silence the very chatty t2s info logging). When None,
+    /// the child inherits the daemon environment.
+    pub log_level: Option<&'a str>,
 }
 
 impl<'a> Default for T2sSpawnConfig<'a> {
@@ -491,6 +495,7 @@ impl<'a> Default for T2sSpawnConfig<'a> {
             wrapped_socks_port: None,
             wrapped_socks_user: None,
             wrapped_socks_pass: None,
+            log_level: None,
         }
     }
 }
@@ -511,6 +516,14 @@ pub fn spawn_t2s_proxy(cfg: T2sSpawnConfig<'_>) -> Result<()> {
     let logf_err = logf.try_clone().with_context(|| "clone log file")?;
 
     let mut cmd = Command::new(cfg.bin);
+
+    // t2s logs at info level by default, which is extremely verbose (backend pool
+    // selection, network change detection, preconnect activity). Allow the caller
+    // to pin a quieter RUST_LOG filter for this child only.
+    if let Some(level) = cfg.log_level.map(str::trim).filter(|s| !s.is_empty()) {
+        cmd.env("RUST_LOG", level);
+    }
+
     cmd.arg("--listen-addr")
         .arg(cfg.listen_addr)
         .arg("--listen-port")
