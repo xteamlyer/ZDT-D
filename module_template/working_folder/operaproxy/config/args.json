@@ -1,5 +1,5 @@
 {
-  "api_proxy": "https://cdn.jsdelivr.net/gh/proxifly/free-proxy-list@main/proxies/countries/US/data.txt",
+  "api_proxy": "https://gitverse.ru/api/repos/xteamlyer/personal/raw/branch/master/proxies%2Fcountries%2FUS%2Fdata.txt",
   "api_user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Mobile Safari/537.36 OPR/104.0.0.0",
   "init_retry_interval": "3s",
   "server_selection": "fastest",

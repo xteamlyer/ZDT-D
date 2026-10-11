@@ -6,7 +6,7 @@ import org.json.JSONObject
 
 private const val DEFAULT_BYEDPI_START_ARGS = "-n m.vk.com vk.com max.ru gosuslugi.ru sun6-20.userapi.com ok.ru online.sberbank.ru -Qr -f6+nr -d2 -d11 -f9+hm -o3 -t7 -a1 -As -d1 -s3+s -s5+s -q7 -a1 -As -o2 -f-43 -a1 -As -r5 -Mh -s1:5+s -s3:7+sm -a1 -o1 -d1 -a1"
 private const val DEFAULT_BYEDPI_RESTART_ARGS = "-x 1 -s 43690:2:43690"
-private const val DEFAULT_API_PROXY = "https://cdn.jsdelivr.net/gh/proxifly/free-proxy-list@main/proxies/countries/US/data.txt"
+private const val DEFAULT_API_PROXY = "https://gitverse.ru/api/repos/xteamlyer/personal/raw/branch/master/proxies%2Fcountries%2FUS%2Fdata.txt"
 private const val DEFAULT_API_USER_AGENT = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Mobile Safari/537.36 OPR/104.0.0.0"
 private val DEFAULT_BOOTSTRAP_DNS = listOf(
   "https://77.88.8.8/dns-query",
