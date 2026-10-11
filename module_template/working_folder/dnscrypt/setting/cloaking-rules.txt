@@ -1,0 +1,401 @@
+tapeop.dev 216.24.57.1
+pypi.org 151.101.0.223
+account.proton.me 18.185.85.112
+mail.proton.me 3.121.224.73
+pass.proton.me 185.70.42.63
+account-api.proton.me 3.68.191.110
+mail-api.proton.me 185.70.42.41
+pm.me 3.68.80.83
+prismic.io 52.70.90.212
+proton.ch 185.70.42.21
+proton.com 52.139.251.148
+proton.me 185.70.42.45
+rust-registry.proton.me 185.199.108.153
+localize.proton.me 184.104.178.43
+status.proton.me 108.157.214.102
+shop.proton.me 23.227.38.74
+autofill.reports.proton.me 54.195.241.34
+partners.proton.me 34.227.202.60
+protonmail.ch 185.70.42.21
+protonmail.com 185.70.42.12
+beta.protonmail.com 18.185.85.112
+mail.protonmail.com 18.185.85.112
+old.protonmail.com 18.185.85.112
+secure.protonmail.com 18.185.85.112
+www.careers.protonmail.com 185.70.42.44
+careers.protonmail.com 185.70.42.44
+shop.protonmail.com 185.70.42.44
+api.protonmail.com 185.70.42.44
+get.protonmail.com 185.70.42.17
+calendar.protonmail.com 3.121.224.73
+www.protonmail.com 185.70.42.31
+app.protonmail.com 185.70.42.31
+dev.protonmail.com 185.70.42.31
+drive.protonmail.com 3.121.224.73
+webmail.protonmail.com 3.121.224.73
+web.protonmail.com 3.121.224.73
+protonstatus.com 172.67.194.22
+protontech.ch 185.70.42.55
+protonvpn.com 185.159.159.140
+
+objects.githubusercontent.com 146.75.22.132
+raw.githubusercontent.com 146.75.22.132
+release-assets.githubusercontent.com 146.75.22.132
+private-user-images.githubusercontent.com 146.75.22.132
+gist.githubusercontent.com 146.75.22.132
+avatars.githubusercontent.com 146.75.22.132
+media.githubusercontent.com 146.75.22.132
+avatars0.githubusercontent.com 146.75.22.132
+avatars1.githubusercontent.com 146.75.22.132
+avatars2.githubusercontent.com 146.75.22.132
+avatars3.githubusercontent.com 146.75.22.132
+avatars4.githubusercontent.com 146.75.22.132
+avatars5.githubusercontent.com 146.75.22.132
+avatars6.githubusercontent.com 146.75.22.132
+avatars7.githubusercontent.com 146.75.22.132
+avatars8.githubusercontent.com 146.75.22.132
+camo.githubusercontent.com 146.75.22.132
+cloud.githubusercontent.com 146.75.22.132
+objects.githubusercontent.com 2606:50c0:8000::154
+raw.githubusercontent.com 2606:50c0:8000::154
+release-assets.githubusercontent.com 2606:50c0:8000::154
+private-user-images.githubusercontent.com 2606:50c0:8000::154
+gist.githubusercontent.com 2606:50c0:8000::154
+avatars.githubusercontent.com 2606:50c0:8000::154
+media.githubusercontent.com 2606:50c0:8000::154
+avatars0.githubusercontent.com 2606:50c0:8000::154
+avatars1.githubusercontent.com 2606:50c0:8000::154
+avatars2.githubusercontent.com 2606:50c0:8000::154
+avatars3.githubusercontent.com 2606:50c0:8000::154
+avatars4.githubusercontent.com 2606:50c0:8000::154
+avatars5.githubusercontent.com 2606:50c0:8000::154
+avatars6.githubusercontent.com 2606:50c0:8000::154
+avatars7.githubusercontent.com 2606:50c0:8000::154
+avatars8.githubusercontent.com 2606:50c0:8000::154
+camo.githubusercontent.com 2606:50c0:8000::154
+cloud.githubusercontent.com 2606:50c0:8000::154
+
+my.telegram.org 149.154.167.220
+desktop.telegram.org 149.154.167.220
+macos.telegram.org 149.154.167.220
+oauth.telegram.org 149.154.167.220
+oauth.tg.dev 149.154.167.220
+cdn.telesco.pe 149.154.167.220
+cdn1.telesco.pe 149.154.167.220
+cdn2.telesco.pe 149.154.167.220
+cdn3.telesco.pe 149.154.167.220
+cdn4.telesco.pe 149.154.167.220
+cdn5.telesco.pe 149.154.167.220
+cdn6.telesco.pe 149.154.167.220
+core.telegram.org 149.154.167.220
+zws4.web.telegram.org 149.154.167.220
+vesta.web.telegram.org 149.154.167.220
+vesta-1.web.telegram.org 149.154.167.220
+venus-1.web.telegram.org 149.154.167.220
+telegram.me 149.154.167.220
+telegram.dog 149.154.167.220
+telegram.space 149.154.167.220
+telesco.pe 149.154.167.220
+tg.dev 149.154.167.220
+telegram.org 149.154.167.220
+t.me 149.154.167.220
+api.telegram.org 149.154.167.220
+td.telegram.org 149.154.167.220
+venus.web.telegram.org 149.154.167.220
+web.telegram.org 149.154.167.220
+kws2-1.web.telegram.org 149.154.167.220
+kws2.web.telegram.org 149.154.167.220
+kws4-1.web.telegram.org 149.154.167.220
+kws4.web.telegram.org 149.154.167.220
+zws2-1.web.telegram.org 149.154.167.220
+zws2.web.telegram.org 149.154.167.220
+zws4-1.web.telegram.org 149.154.167.220
+
+discord.com 162.159.138.232
+discord.com 162.159.137.232
+discord.com 162.159.128.233
+discord.com 162.159.135.232
+updates.discord.com 162.159.138.232
+updates.discord.com 162.159.137.232
+updates.discord.com 162.159.128.233
+updates.discord.com 162.159.135.232
+
+### dns.malw.link: hosts file
+# Последнее обновление: 29 августа 2026
+
+tracker.openbittorrent.com 52.223.13.41
+test.dns.malw.link 185.31.40.18
+ntc.party 130.255.77.28
+controlplane.tailscale.com 103.27.157.38
+game.clashroyaleapp.com 62.133.62.97
+gamea.clashofclans.com 193.23.209.189
+game.brawlstarsgame.com 80.253.249.40
+game.squadbustersgame.com 108.61.167.26
+game.mocogame.com 62.133.62.97
+d.rutor.info 172.64.33.155
+instagram.com 157.240.245.174
+www.instagram.com 157.240.245.174
+b.i.instagram.com 157.240.245.174
+z-p42-chat-e2ee-ig.facebook.com 157.240.245.174
+help.instagram.com 157.240.245.174
+
+# OpenAI #
+chatgpt.com 193.233.112.68
+ab.chatgpt.com 193.233.112.68
+auth.openai.com 193.233.112.68
+auth0.openai.com 193.233.112.67
+platform.openai.com 193.233.112.68
+cdn.oaistatic.com 193.233.112.68
+files.oaiusercontent.com 193.233.112.68
+tcr9i.chat.openai.com 193.233.112.68
+webrtc.chatgpt.com 193.233.112.68
+android.chat.openai.com 193.233.112.68
+api.openai.com 193.233.112.68
+operator.chatgpt.com 193.233.112.67
+sora.chatgpt.com 193.233.112.67
+videos.openai.com 193.233.112.68
+ios.chat.openai.com 193.233.112.68
+cdn.platform.openai.com 193.233.112.68
+developers.openai.com 193.233.112.68
+sdmntprukwest.oaiusercontent.com 193.233.112.68
+sdmntpritalynorth.oaiusercontent.com 193.233.112.68
+sdmntprpolandcentral.oaiusercontent.com 193.233.112.68
+sdmntprnortheu.oaiusercontent.com 193.233.112.68
+
+# Microsoft #
+copilot.microsoft.com 193.233.112.68
+sydney.bing.com 193.233.112.67
+edgeservices.bing.com 193.233.112.67
+rewards.bing.com 193.233.112.68
+xsts.auth.xboxlive.com 193.233.112.68
+xgpuwebf2p.gssv-play-prod.xboxlive.com 193.233.112.68
+xgpuweb.gssv-play-prod.xboxlive.com 193.233.112.68
+
+# Spotify #
+api.spotify.com 193.233.112.68
+login5.spotify.com 193.233.112.68
+encore.scdn.co 193.233.112.68
+gew1-spclient.spotify.com 193.233.112.68
+spclient.wg.spotify.com 193.233.112.68
+api-partner.spotify.com 193.233.112.68
+aet.spotify.com 193.233.112.68
+www.spotify.com 193.233.112.68
+accounts.spotify.com 193.233.112.68
+open.spotify.com 193.233.112.68
+accounts.scdn.co 193.233.112.68
+gew1-dealer.spotify.com 193.233.112.68
+www-growth.scdn.co 193.233.112.68
+
+# GitHub Copilot
+api.individual.githubcopilot.com 193.233.112.68
+proxy.individual.githubcopilot.com 193.233.112.68
+
+# JetBrains #
+datalore.jetbrains.com 193.233.112.68
+plugins.jetbrains.com 193.233.112.68
+download.jetbrains.com 193.233.112.68
+api.jetbrains.ai 193.233.112.67
+account.jetbrains.com 193.233.112.68
+
+# ElevenLabs #
+elevenlabs.io 193.233.112.68
+api.us.elevenlabs.io 193.233.112.68
+elevenreader.io 193.233.112.68
+api.elevenlabs.io 193.233.112.68
+help.elevenlabs.io 193.233.112.68
+
+# Grok #
+grok.com 193.233.112.68
+accounts.x.ai 193.233.112.68
+assets.grok.com 193.233.112.68
+
+# Tidal #
+api.tidal.com 62.133.62.97
+listen.tidal.com 62.133.62.97
+login.tidal.com 62.133.62.97
+auth.tidal.com 62.133.62.97
+link.tidal.com 62.133.62.97
+dd.tidal.com 62.133.62.97
+resources.tidal.com 62.133.62.97
+images.tidal.com 62.133.62.97
+geolocation.onetrust.com 193.233.112.68
+api.squareup.com 193.233.112.68
+api-global.squareup.com 193.233.112.68
+
+# Supercell #
+cdn.id.supercell.com 193.233.112.68
+security.id.supercell.com 193.233.112.68
+accounts.supercell.com 193.233.112.68
+game-assets.clashroyaleapp.com 193.233.112.68
+game-assets.clashofclans.com 193.233.112.68
+clashofclans.inbox.supercell.com 193.233.112.68
+game-assets.brawlstarsgame.com 193.233.112.68
+store.supercell.com 193.233.112.68
+
+# DeepL #
+deepl.com 193.233.112.68
+www.deepl.com 193.233.112.68
+www2.deepl.com 193.233.112.68
+login-wall.deepl.com 193.233.112.68
+w.deepl.com 193.233.112.68
+s.deepl.com 193.233.112.68
+dict.deepl.com 193.233.112.68
+ita-free.www.deepl.com 193.233.112.68
+write-free.www.deepl.com 193.233.112.68
+experimentation.deepl.com 193.233.112.68
+experimentation-grpc.deepl.com 193.233.112.68
+ita-free.app.deepl.com 193.233.112.68
+shield.deepl.com 193.233.112.68
+ott.deepl.com 193.233.112.68
+api-free.deepl.com 193.233.112.68
+backend.deepl.com 193.233.112.68
+clearance.deepl.com 193.233.112.68
+errortracking.deepl.com 193.233.112.68
+auth.deepl.com 193.233.112.68
+oneshot-free.www.deepl.com 193.233.112.68
+checkout.www.deepl.com 193.233.112.68
+gtm.deepl.com 193.233.112.68
+voice-proxy.www.deepl.com 193.233.112.68
+
+# Deezer #
+deezer.com 193.233.112.68
+www.deezer.com 193.233.112.68
+payment.deezer.com 193.233.112.68
+
+# Weather.com #
+weather.com 193.233.112.68
+upsx.weather.com 193.233.112.68
+
+# Google #
+api.fitbit.com 62.133.62.97
+fitbit-pa.googleapis.com 62.133.62.97
+fitbitvestibuleshim-pa.googleapis.com 62.133.62.97
+fitbit.google.com 62.133.62.97
+gemini.google.com 62.133.62.97
+aistudio.google.com 62.133.62.97
+generativelanguage.googleapis.com 62.133.62.97
+aitestkitchen.withgoogle.com 62.133.62.97
+aisandbox-pa.googleapis.com 62.133.62.97
+webchannel-alkalimakersuite-pa.clients6.google.com 62.133.62.97
+alkalimakersuite-pa.clients6.google.com 62.133.62.97
+assistant-s3-pa.googleapis.com 62.133.62.97
+proactivebackend-pa.googleapis.com 62.133.62.97
+robinfrontend-pa.googleapis.com 62.133.62.97
+o.pki.goog 62.133.62.97
+labs.google 62.133.62.97
+notebooklm.google.com 62.133.62.97
+jules.google.com 62.133.62.97
+stitch.withgoogle.com 62.133.62.97
+
+# Claude #
+claude.ai 193.233.112.68
+console.anthropic.com 193.233.112.68
+api.anthropic.com 193.233.112.68
+platform.claude.com 193.233.112.68
+a.claude.ai 193.233.112.68
+
+# Trae.ai #
+trae-api-sg.mchost.guru 193.233.112.68
+api.trae.ai 193.233.112.68
+api-sg-central.trae.ai 193.233.112.68
+api16-normal-alisg.mchost.guru 193.233.112.68
+
+# Linear.app #
+linear.app 193.233.112.68
+client-api.linear.app 193.233.112.68
+static.linear.app 193.233.112.68
+constellation.linear.app 193.233.112.68
+uploads.linear.app 193.233.112.68
+public.linear.app 193.233.112.68
+s.linear.app 193.233.112.68
+
+# Windsurf #
+windsurf.com 193.233.112.68
+codeium.com 193.233.112.68
+server.codeium.com 193.233.112.68
+web-backend.codeium.com 193.233.112.68
+unleash.codeium.com 193.233.112.68
+inference.codeium.com 193.233.112.68
+windsurf-stable.codeium.com 193.233.112.68
+windsurf-telemetry.codeium.com 193.233.112.68
+marketplace.windsurf.com 193.233.112.68
+
+# Twitch #
+usher.ttvnw.net 193.233.112.68
+gql.twitch.tv 193.233.112.68
+
+# Manus #
+manus.im 193.233.112.68
+api.manus.im 193.233.112.68
+
+# Notion #
+www.notion.so 193.233.112.68
+calendar.notion.so 193.233.112.68
+app.notion.com 193.233.112.68
+
+# Canva #
+www.canva.com 103.137.248.179
+content-management-files.canva.com 193.233.112.68
+static.canva.com 193.233.112.68
+
+# Intel #
+www.intel.com 193.233.112.68
+
+# Dell #
+www.dell.com 193.233.112.68
+
+# TikTok #
+www.tiktok.com 62.133.62.97
+
+# Archive.org #
+web.archive.org 193.233.112.68
+
+# NVIDIA #
+developer.nvidia.com 193.233.112.68
+
+# Parsec #
+builds.parsec.app 193.233.112.68
+
+# Tria.ge #
+tria.ge 193.233.112.68
+
+# Qwant #
+www.qwant.com 193.233.112.68
+
+# guidedhacking.com #
+guidedhacking.com 193.233.112.68
+
+# Framer #
+framer.com 193.233.112.68
+
+# Autodesk #
+accounts.autodesk.com 193.233.112.68
+www.autodesk.com 193.233.112.68
+
+# Pump.fun #
+pump.fun 193.233.112.68
+frontend-api-v3.pump.fun 193.233.112.68
+images.pump.fun 193.233.112.67
+swap-api.pump.fun 193.233.112.68
+
+# Truth Social
+truthsocial.com 193.233.112.68
+static-assets-1.truthsocial.com 193.233.112.68
+
+# Elgato #
+www.elgato.com 193.233.112.68
+
+# Imgur #
+api.imgur.com 193.233.112.68
+
+# Dyson #
+dyson.com 193.233.112.68
+www.dyson.com 193.233.112.68
+www.dyson.fr 62.133.62.97
+
+# Broadcom #
+profile.broadcom.com 193.233.112.68
+
+# Patreon #
+patreon.com 62.133.62.97
+www.patreon.com 62.133.62.97

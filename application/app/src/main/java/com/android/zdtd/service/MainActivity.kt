@@ -218,7 +218,7 @@ class MainActivity : AppCompatActivity() {
       installerPausedActivity = false
       vm.onApkInstallerReturned(filePath)
       // Fallback to releases page if install intent fails.
-      openUrl("https://github.com/GAME-OVER-op/ZDT-D/releases")
+      openUrl("https://github.com/xteamlyer/ZDT-D/releases")
     }
   }
 

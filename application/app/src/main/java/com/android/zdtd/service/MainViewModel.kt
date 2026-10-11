@@ -84,7 +84,7 @@ private const val LSPOSED_HIDE_PREF_UPDATED_AT = "updated_at"
 private const val APP_DISTRIBUTION_META_DATA = "com.android.zdtd.service.DISTRIBUTION"
 private const val ONLINE_MODULE_VERSION_MISMATCH_MARKER = "ZDTD_ONLINE_MODULE_VERSION_MISMATCH"
 private const val ONLINE_MODULE_DOWNLOAD_FAILED_MARKER = "ZDTD_ONLINE_MODULE_DOWNLOAD_FAILED"
-private const val ONLINE_MODULE_URL = "https://github.com/GAME-OVER-op/ZDT-D/releases/download/Technical_Assets/zdt_module.zip"
+private const val ONLINE_MODULE_URL = "https://github.com/xteamlyer/ZDT-D/releases/download/Technical_Assets/zdt_module.zip"
 private const val FULL_ROOT_APK_ASSET_NAME = "app-release.apk"
 private const val SERVICE_FULL_ROOT_APK_ASSET_NAME = "ZDT-D-service-build.apk"
 private const val MAX_FULL_ROOT_APK_BYTES = 1024L * 1024L * 1024L
@@ -743,7 +743,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
   }
 
   private fun releaseApkUrl(tag: String): String {
-    return "https" + "://github.com/GAME-OVER-op/ZDT-D/releases/download/${tag}/${releaseApkAssetName()}"
+    return "https" + "://github.com/xteamlyer/ZDT-D/releases/download/${tag}/${releaseApkAssetName()}"
   }
 
   private fun releaseDistribution(): String {
@@ -838,7 +838,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
 
 
   private suspend fun fetchReleaseJsonByTag(tag: String): JSONObject? {
-    val body = httpGetText("https" + "://api.github.com/repos/GAME-OVER-op/ZDT-D/releases/tags/${tag}") ?: return null
+    val body = httpGetText("https" + "://api.github.com/repos/xteamlyer/ZDT-D/releases/tags/${tag}") ?: return null
     return runCatching { JSONObject(body) }.getOrNull()
   }
 
@@ -908,7 +908,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
 
   private suspend fun fetchPublishedBuildStatus(expectedVersionCode: Int?): PublishedBuildStatus? {
     val cacheBust = System.currentTimeMillis()
-    val url = "https://github.com/GAME-OVER-op/ZDT-D/releases/download/Technical_Assets/zdt-build-status.json?ts=$cacheBust"
+    val url = "https://github.com/xteamlyer/ZDT-D/releases/download/Technical_Assets/zdt-build-status.json?ts=$cacheBust"
     val body = httpGetText(url) ?: return null
     val js = runCatching { JSONObject(body) }.getOrNull() ?: return null
     if (js.optInt("schema", 0) != 1 || js.optString("workflow") != "build.yml") return null
@@ -950,7 +950,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
   }
 
   private suspend fun fetchRelevantBuildRun(publishedSha: String?): WorkflowRunInfo? {
-    val body = httpGetText("https://api.github.com/repos/GAME-OVER-op/ZDT-D/actions/workflows/build.yml/runs?branch=main&per_page=10") ?: return null
+    val body = httpGetText("https://api.github.com/repos/xteamlyer/ZDT-D/actions/workflows/build.yml/runs?branch=main&per_page=10") ?: return null
     val arr = runCatching { JSONObject(body).optJSONArray("workflow_runs") }.getOrNull() ?: return null
     val runs = buildList {
       for (i in 0 until arr.length()) {
@@ -975,7 +975,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
   }
 
   private suspend fun fetchWorkflowJobs(runId: Long): List<WorkflowJobInfo> {
-    val body = httpGetText("https://api.github.com/repos/GAME-OVER-op/ZDT-D/actions/runs/${runId}/jobs?per_page=100") ?: return emptyList()
+    val body = httpGetText("https://api.github.com/repos/xteamlyer/ZDT-D/actions/runs/${runId}/jobs?per_page=100") ?: return emptyList()
     val arr = runCatching { JSONObject(body).optJSONArray("jobs") }.getOrNull() ?: return emptyList()
     return buildList {
       for (i in 0 until arr.length()) {
@@ -1170,7 +1170,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     _appUpdate.update { it.copy(enabled = true, checking = true, errorText = null) }
 
     // 1) Latest release
-    val latestUrl = "https://api.github.com/repos/GAME-OVER-op/ZDT-D/releases/latest"
+    val latestUrl = "https://api.github.com/repos/xteamlyer/ZDT-D/releases/latest"
     val etagRel = root.getGitHubEtagLatestRelease()
     val (codeRel, bodyRel, newEtagRel) = runCatching { httpGetMaybeCached(latestUrl, etagRel) }
       .getOrElse {
@@ -1209,7 +1209,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     }
 
     // 2) module.prop (always main)
-    val modulePropUrl = "https://raw.githubusercontent.com/GAME-OVER-op/ZDT-D/main/module.prop"
+    val modulePropUrl = "https://raw.githubusercontent.com/xteamlyer/ZDT-D/main/module.prop"
     val etagProp = root.getGitHubEtagModuleProp()
     val (codeProp, bodyProp, newEtagProp) = runCatching { httpGetMaybeCached(modulePropUrl, etagProp) }
       .getOrElse {
@@ -1254,7 +1254,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     // If latest release is still older, keep showing the preparation state instead of hiding the update.
     val tagVer = normalizeTagToVersion(tag)
     val stableTag = if (tagVer == remoteVersion) tag else "V${remoteVersion}"
-    val stableHtmlUrl = if (tagVer == remoteVersion) htmlUrl else "https" + "://github.com/GAME-OVER-op/ZDT-D/releases/tag/${stableTag}"
+    val stableHtmlUrl = if (tagVer == remoteVersion) htmlUrl else "https" + "://github.com/xteamlyer/ZDT-D/releases/tag/${stableTag}"
 
     // Local comparison is based on the bundled module.prop inside the APK (next to the installer payload).
     // This ensures that online update checks follow the same versioning as the embedded module.
@@ -2539,7 +2539,7 @@ private fun clearDownloadedUpdateApk() {
     val expectedTag = if (serviceBuild) "service-build" else "V${normalizeTagToVersion(versionName)}"
     val expectedAssetName = if (serviceBuild) SERVICE_FULL_ROOT_APK_ASSET_NAME else FULL_ROOT_APK_ASSET_NAME
     val request = Request.Builder()
-      .url("https://api.github.com/repos/GAME-OVER-op/ZDT-D/releases?per_page=100")
+      .url("https://api.github.com/repos/xteamlyer/ZDT-D/releases?per_page=100")
       .header("User-Agent", "ZDT-D-Android")
       .header("Accept", "application/vnd.github+json")
       .build()
@@ -2567,7 +2567,7 @@ private fun clearDownloadedUpdateApk() {
     val uri = Uri.parse(url)
     uri.scheme.equals("https", ignoreCase = true) &&
       uri.host.equals("github.com", ignoreCase = true) &&
-      uri.path.orEmpty().startsWith("/GAME-OVER-op/ZDT-D/releases/download/") &&
+      uri.path.orEmpty().startsWith("/xteamlyer/ZDT-D/releases/download/") &&
       uri.lastPathSegment == assetName
   }.getOrDefault(false)
 
@@ -8602,7 +8602,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
       root.setCachedAppUpdateDownloadUrl(url)
       _appUpdate.update { it.copy(downloadUrl = url) }
     }
-    val releaseUrl = state.releaseHtmlUrl ?: "https://github.com/GAME-OVER-op/ZDT-D/releases"
+    val releaseUrl = state.releaseHtmlUrl ?: "https://github.com/xteamlyer/ZDT-D/releases"
     if (url.isNullOrBlank()) {
       if (_appUpdate.value.releaseBuild.status !in setOf(AppReleaseBuildStatus.PREPARING, AppReleaseBuildStatus.FAILED)) {
         _appUpdateEvents.tryEmit(AppUpdateEvent.OpenUrl(releaseUrl))
@@ -8653,7 +8653,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
   }
 
   override fun declineUnknownSourcesPermission() {
-    val releaseUrl = _appUpdate.value.releaseHtmlUrl ?: "https://github.com/GAME-OVER-op/ZDT-D/releases"
+    val releaseUrl = _appUpdate.value.releaseHtmlUrl ?: "https://github.com/xteamlyer/ZDT-D/releases"
     clearDownloadedUpdateApk()
     _appUpdate.update { it.copy(bannerVisible = false, errorText = null) }
     _appUpdateEvents.tryEmit(AppUpdateEvent.OpenUrl(releaseUrl))
@@ -8680,7 +8680,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
       return
     }
 
-    val releaseUrl = _appUpdate.value.releaseHtmlUrl ?: "https://github.com/GAME-OVER-op/ZDT-D/releases"
+    val releaseUrl = _appUpdate.value.releaseHtmlUrl ?: "https://github.com/xteamlyer/ZDT-D/releases"
     val path = _appUpdate.value.downloadedPath
     _appUpdate.update { it.copy(needsUnknownSourcesPermission = false) }
 
