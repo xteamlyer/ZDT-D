@@ -549,7 +549,7 @@ fn sleep_while_dnscrypt_running(child: &mut Child, delay: Duration) -> Result<Op
             return Ok(Some(status));
         }
         let remaining = deadline.saturating_duration_since(Instant::now());
-        std::thread::sleep(remaining.min(Duration::from_millis(250)));
+        std::thread::sleep(remaining.min(Duration::from_millis(3000)));
     }
     Ok(None)
 }

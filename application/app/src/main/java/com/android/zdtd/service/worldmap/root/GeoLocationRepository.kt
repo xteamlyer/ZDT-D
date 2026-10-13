@@ -22,7 +22,7 @@ import java.util.zip.GZIPInputStream
  * Offline GeoIP resolver for the world map.
  *
  * The database is downloaded on demand from the ZDT-D GitHub Technical_Assets release:
- *   https://github.com/GAME-OVER-op/ZDT-D/releases/download/Technical_Assets/dbip-city-lite.mmdb.gz
+ *   https://github.com/xteamlyer/ZDT-D/releases/download/Technical_Assets/dbip-city-lite.mmdb.gz
  *
  * Source: DB-IP IP to City Lite MMDB, https://db-ip.com/db/download/ip-to-city-lite
  * Attribution required: IP geolocation data by DB-IP.com.
@@ -447,7 +447,7 @@ class GeoLocationRepository(
         private const val GEO_DB_FILE = "dbip-city-lite.mmdb"
         private const val LEGACY_GEO_DB_FILE = "dbip-city-lite-2026-05.mmdb"
         private const val GEO_DB_DIR = "geo"
-        private const val GEO_DB_DOWNLOAD_URL = "https://github.com/GAME-OVER-op/ZDT-D/releases/download/Technical_Assets/dbip-city-lite.mmdb.gz"
+        private const val GEO_DB_DOWNLOAD_URL = "https://github.com/xteamlyer/ZDT-D/releases/download/Technical_Assets/dbip-city-lite.mmdb.gz"
         private const val MAX_CACHE_SIZE = 4096
         private const val MAX_LOCAL_GEO_RESOLVE_PER_CYCLE = 64
         private const val MIN_EXPECTED_DB_BYTES = 1_000_000L

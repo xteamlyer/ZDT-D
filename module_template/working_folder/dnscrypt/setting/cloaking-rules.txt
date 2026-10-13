@@ -1,0 +1,203 @@
+discord.com 162.159.138.232
+discord.com 162.159.137.232
+discord.com 162.159.128.233
+discord.com 162.159.135.232
+updates.discord.com 162.159.138.232
+updates.discord.com 162.159.137.232
+updates.discord.com 162.159.128.233
+updates.discord.com 162.159.135.232
+
+### dns.malw.link: hosts file
+# Последнее обновление: 11 октября 2026
+
+test.dns.malw.link 185.31.40.18
+ntc.party 130.255.77.28
+game.clashroyaleapp.com 179.254.166.171
+gamea.clashofclans.com 164.5.224.81
+game.brawlstarsgame.com 179.254.166.174
+game.mocogame.com 179.254.166.171
+instagram.com 57.144.248.34
+www.instagram.com 57.144.248.34
+b.i.instagram.com 57.144.248.34
+z-p42-chat-e2ee-ig.facebook.com 57.144.248.34
+help.instagram.com 57.144.248.34
+
+chatgpt.com 143.20.64.55
+ab.chatgpt.com 143.20.64.55
+auth.openai.com 143.20.64.55
+auth0.openai.com 143.20.64.55
+platform.openai.com 143.20.64.55
+cdn.oaistatic.com 143.20.64.55
+files.oaiusercontent.com 143.20.64.55
+tcr9i.chat.openai.com 143.20.64.55
+webrtc.chatgpt.com 143.20.64.55
+android.chat.openai.com 143.20.64.55
+api.openai.com 143.20.64.55
+operator.chatgpt.com 143.20.64.55
+sora.chatgpt.com 143.20.64.55
+videos.openai.com 143.20.64.55
+ios.chat.openai.com 143.20.64.55
+cdn.platform.openai.com 143.20.64.55
+developers.openai.com 143.20.64.55
+sdmntprukwest.oaiusercontent.com 143.20.64.55
+sdmntpritalynorth.oaiusercontent.com 143.20.64.55
+sdmntprpolandcentral.oaiusercontent.com 143.20.64.55
+sdmntprnortheu.oaiusercontent.com 143.20.64.55
+
+copilot.microsoft.com 143.20.64.55
+sydney.bing.com 143.20.64.55
+edgeservices.bing.com 143.20.64.55
+rewards.bing.com 143.20.64.55
+xsts.auth.xboxlive.com 143.20.64.55
+xgpuwebf2p.gssv-play-prod.xboxlive.com 143.20.64.55
+xgpuweb.gssv-play-prod.xboxlive.com 143.20.64.55
+
+api.spotify.com 143.20.64.55
+login5.spotify.com 143.20.64.55
+encore.scdn.co 143.20.64.55
+gew1-spclient.spotify.com 143.20.64.55
+spclient.wg.spotify.com 143.20.64.55
+api-partner.spotify.com 143.20.64.55
+aet.spotify.com 143.20.64.55
+www.spotify.com 143.20.64.55
+accounts.spotify.com 143.20.64.55
+open.spotify.com 143.20.64.55
+accounts.scdn.co 143.20.64.55
+gew1-dealer.spotify.com 143.20.64.55
+www-growth.scdn.co 143.20.64.55
+
+api.individual.githubcopilot.com 143.20.64.55
+proxy.individual.githubcopilot.com 143.20.64.55
+
+datalore.jetbrains.com 143.20.64.55
+plugins.jetbrains.com 143.20.64.55
+download.jetbrains.com 143.20.64.55
+api.jetbrains.ai 143.20.64.55
+account.jetbrains.com 143.20.64.55
+
+elevenlabs.io 143.20.64.55
+api.us.elevenlabs.io 143.20.64.55
+elevenreader.io 143.20.64.55
+api.elevenlabs.io 143.20.64.55
+help.elevenlabs.io 143.20.64.55
+
+grok.com 143.20.64.55
+accounts.x.ai 143.20.64.55
+assets.grok.com 143.20.64.55
+
+api.tidal.com 143.20.64.55
+listen.tidal.com 143.20.64.55
+login.tidal.com 143.20.64.55
+auth.tidal.com 143.20.64.55
+link.tidal.com 143.20.64.55
+dd.tidal.com 143.20.64.55
+resources.tidal.com 143.20.64.55
+images.tidal.com 143.20.64.55
+geolocation.onetrust.com 143.20.64.55
+api.squareup.com 143.20.64.55
+api-global.squareup.com 143.20.64.55
+
+cdn.id.supercell.com 143.20.64.55
+security.id.supercell.com 143.20.64.55
+accounts.supercell.com 143.20.64.55
+game-assets.clashroyaleapp.com 143.20.64.55
+game-assets.clashofclans.com 143.20.64.55
+clashofclans.inbox.supercell.com 143.20.64.55
+game-assets.brawlstarsgame.com 143.20.64.55
+store.supercell.com 143.20.64.55
+
+deepl.com 143.20.64.55
+www.deepl.com 143.20.64.55
+www2.deepl.com 143.20.64.55
+login-wall.deepl.com 143.20.64.55
+w.deepl.com 143.20.64.55
+s.deepl.com 143.20.64.55
+dict.deepl.com 143.20.64.55
+ita-free.www.deepl.com 143.20.64.55
+write-free.www.deepl.com 143.20.64.55
+experimentation.deepl.com 143.20.64.55
+experimentation-grpc.deepl.com 143.20.64.55
+ita-free.app.deepl.com 143.20.64.55
+shield.deepl.com 143.20.64.55
+ott.deepl.com 143.20.64.55
+api-free.deepl.com 143.20.64.55
+backend.deepl.com 143.20.64.55
+clearance.deepl.com 143.20.64.55
+errortracking.deepl.com 143.20.64.55
+auth.deepl.com 143.20.64.55
+oneshot-free.www.deepl.com 143.20.64.55
+checkout.www.deepl.com 143.20.64.55
+gtm.deepl.com 143.20.64.55
+voice-proxy.www.deepl.com 143.20.64.55
+
+deezer.com 143.20.64.55
+www.deezer.com 143.20.64.55
+payment.deezer.com 143.20.64.55
+
+weather.com 143.20.64.55
+upsx.weather.com 143.20.64.55
+
+api.fitbit.com 179.254.166.174
+fitbit-pa.googleapis.com 179.254.166.174
+fitbitvestibuleshim-pa.googleapis.com 179.254.166.174
+fitbit.google.com 179.254.166.174
+gemini.google.com 179.254.166.174
+aistudio.google.com 179.254.166.174
+generativelanguage.googleapis.com 179.254.166.174
+aitestkitchen.withgoogle.com 179.254.166.174
+aisandbox-pa.googleapis.com 179.254.166.174
+webchannel-alkalimakersuite-pa.clients6.google.com 179.254.166.174
+alkalimakersuite-pa.clients6.google.com 179.254.166.174
+assistant-s3-pa.googleapis.com 179.254.166.174
+proactivebackend-pa.googleapis.com 179.254.166.174
+robinfrontend-pa.googleapis.com 179.254.166.174
+o.pki.goog 179.254.166.174
+labs.google 179.254.166.174
+notebooklm.google.com 179.254.166.174
+jules.google.com 179.254.166.174
+stitch.withgoogle.com 179.254.166.174
+
+claude.ai 143.20.64.55
+console.anthropic.com 143.20.64.55
+api.anthropic.com 143.20.64.55
+platform.claude.com 143.20.64.55
+a.claude.ai 143.20.64.55
+
+linear.app 143.20.64.55
+client-api.linear.app 143.20.64.55
+static.linear.app 143.20.64.55
+constellation.linear.app 143.20.64.55
+uploads.linear.app 143.20.64.55
+public.linear.app 143.20.64.55
+s.linear.app 143.20.64.55
+
+usher.ttvnw.net 143.20.64.55
+gql.twitch.tv 132.243.112.221
+
+www.notion.so 143.20.64.55
+calendar.notion.so 143.20.64.55
+app.notion.com 143.20.64.55
+
+www.canva.com 143.20.64.55
+content-management-files.canva.com 143.20.64.55
+static.canva.com 143.20.64.55
+
+www.tiktok.com 217.60.179.6
+
+web.archive.org 143.20.64.55
+
+developer.nvidia.com 143.20.64.55
+
+builds.parsec.app 143.20.64.55
+
+truthsocial.com 143.20.64.55
+static-assets-1.truthsocial.com 143.20.64.55
+
+api.imgur.com 143.20.64.55
+
+dyson.com 143.20.64.55
+www.dyson.com 143.20.64.55
+www.dyson.fr 143.20.64.55
+
+patreon.com 217.60.179.6
+www.patreon.com 143.20.64.55
