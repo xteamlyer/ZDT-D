@@ -6,41 +6,21 @@ import org.json.JSONObject
 
 private const val DEFAULT_BYEDPI_START_ARGS = "-n m.vk.com vk.com max.ru gosuslugi.ru sun6-20.userapi.com ok.ru online.sberbank.ru -Qr -f6+nr -d2 -d11 -f9+hm -o3 -t7 -a1 -As -d1 -s3+s -s5+s -q7 -a1 -As -o2 -f-43 -a1 -As -r5 -Mh -s1:5+s -s3:7+sm -a1 -o1 -d1 -a1"
 private const val DEFAULT_BYEDPI_RESTART_ARGS = "-x 1 -s 43690:2:43690"
-private const val DEFAULT_API_PROXY = "https://raw.githubusercontent.com/stormsia/proxy-list/main/working_proxies.txt"
-private const val DEFAULT_API_USER_AGENT = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
+private const val DEFAULT_API_PROXY = "https://gitverse.ru/api/repos/xteamlyer/personal/raw/branch/master/proxies%2Fcountries%2FUS%2Fdata.txt"
+private const val DEFAULT_API_USER_AGENT = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Mobile Safari/537.36 OPR/104.0.0.0"
 private val DEFAULT_BOOTSTRAP_DNS = listOf(
-  "https://xbox-dns.ru/dns-query",
-  "tls://9.9.9.9:853",
-  "https://ru-mow.doh.sb/dns-query",
-  "https://1.1.1.3/dns-query",
-  "https://security.cloudflare-dns.com/dns-query",
-  "https://wikimedia-dns.org/dns-query",
-  "https://dns.adguard-dns.com/dns-query",
-  "https://dns.quad9.net/dns-query",
-  "https://dns.comss.one/dns-query",
-  "https://router.comss.one/dns-query",
-  "https://dns.google/dns-query",
-  "tls://dns.google:853",
-  "https://cloudflare-dns.com/dns-query",
-  "tls://cloudflare-dns.com:853",
-  "tls://dns.adguard-dns.com:853",
-  "https://family.adguard-dns.com/dns-query",
-  "https://unfiltered.adguard-dns.com/dns-query",
-  "https://dns.mullvad.net/dns-query",
-  "https://adblock.dns.mullvad.net/dns-query",
-  "https://protective.joindns4.eu/dns-query",
-  "https://doh.kel.pe",
-  "https://dns.adnull.com/dns-query",
-  "https://dns.alidns.com/dns-query",
-  "https://adfreedns.top/dns-query",
+  "https://77.88.8.8/dns-query",
+  "tls://77.88.8.8:853",
+  "tcp://77.88.8.8:53",
+  "tcp://77.88.8.8",
 )
 
 data class NonRootDirectOperaConfig(
   val byedpiStartArgs: String = DEFAULT_BYEDPI_START_ARGS,
   val byedpiRestartArgs: String = DEFAULT_BYEDPI_RESTART_ARGS,
   val restartByedpiAfterOpera: Boolean = false,
-  val serverRegion: String = "EU",
-  val serverSni: String = "m.vk.com",
+  val serverRegion: String = "AM",
+  val serverSni: String = "m.vk.ru",
   val upstreamMode: String = OPERA_UPSTREAM_BYEDPI,
   val customUpstreamProxy: String = "",
   val overrideProxyAddress: String = "",
@@ -50,7 +30,7 @@ data class NonRootDirectOperaConfig(
   val serverSelection: String = "fastest",
   val serverSelectionDlLimit: String = "204800",
   val serverSelectionTestUrl: String = "https://ajax.googleapis.com/ajax/libs/angularjs/1.8.2/angular.min.js",
-  val verbosity: String = "50",
+  val verbosity: String = "60",
   val bootstrapDns: List<String> = DEFAULT_BOOTSTRAP_DNS,
 ) {
   val useByedpi: Boolean get() = upstreamMode == OPERA_UPSTREAM_BYEDPI

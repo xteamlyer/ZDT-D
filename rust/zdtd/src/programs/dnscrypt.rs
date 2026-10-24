@@ -507,6 +507,17 @@ enum DnscryptWaitResult {
 }
 
 fn wait_dnscrypt_ready(listen_port: u16, child: &mut Child) -> Result<DnscryptWaitResult> {
+    // Give DNSCrypt time to initialize before the first readiness probe.
+    // This avoids a noisy warning during an otherwise normal startup.
+    const INITIAL_STARTUP_DELAY: Duration = Duration::from_secs(10);
+
+    if let Some(status) = sleep_while_dnscrypt_running(child, INITIAL_STARTUP_DELAY)? {
+        return Ok(DnscryptWaitResult::Exited(status));
+    }
+    if stop_requested() {
+        return Ok(DnscryptWaitResult::StopRequested);
+    }
+
     let mut delay = Duration::from_secs(5);
 
     loop {
@@ -1123,7 +1134,7 @@ fn apply_dns_ip6tables(listen_port: u16) -> Result<()> {
         }
     } else {
         warn!("dns: ip6tables nat table unsupported; disabling IPv6 DNS ports (53/853/5353)");
-        crate::logging::user_warn("DNSCrypt: IPv6 NAT не поддерживается — IPv6 DNS-порты 53/853/5353 отключены");
+        // crate::logging::user_warn("DNSCrypt: IPv6 NAT не поддерживается — IPv6 DNS-порты 53/853/5353 отключены");
         set_ipv6_disabled_resetprops();
 
         // Remove RETURN exceptions for 53 (otherwise they would bypass the block).

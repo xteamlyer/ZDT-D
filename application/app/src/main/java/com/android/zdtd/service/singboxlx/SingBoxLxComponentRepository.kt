@@ -535,7 +535,7 @@ class SingBoxLxComponentRepository(
         private const val COMPONENT_INFO_PATH = "$COMPONENT_INFO_DIR/component.json"
         private const val COMPONENT_INFO_TMP_PATH = "$COMPONENT_INFO_PATH.tmp"
         private const val COMPONENT_INFO_BACKUP_PATH = "$COMPONENT_INFO_PATH.bak"
-        private const val DOWNLOAD_URL = "https://github.com/GAME-OVER-op/ZDT-D/releases/download/Technical_Assets/$ARCHIVE_FILE"
+        private const val DOWNLOAD_URL = "https://github.com/xteamlyer/ZDT-D/releases/download/Technical_Assets/$ARCHIVE_FILE"
         private const val EXPECTED_SOURCE = "https://github.com/Leadaxe/sing-box-lx"
         private const val EXPECTED_LICENSE = "GPL-3.0"
         private val REQUIRED_BUILD_TAGS = setOf("with_gvisor", "with_quic", "with_utls", "with_xhttp", "with_awg", "with_lx_chain")

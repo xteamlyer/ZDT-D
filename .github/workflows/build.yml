@@ -26,7 +26,7 @@ env:
   ANDROID_BUILD_TOOLS_VERSION: "37.0.0"
   GRADLE_VERSION: "9.6.0"
   NATIVE_NDK_VERSION: "30.0.16248370"
-  GO_VERSION: "1.26.8"
+  GO_VERSION: "1.27"
   CARGO_PROFILE: release
   CARGO_BUILD_TARGET: aarch64-linux-android
   BUILD_TYPE: ${{ github.event.inputs.build_type || 'Release' }}
@@ -43,17 +43,17 @@ env:
   AMNEZIAWG_UAPI_RUN_DIR: "/data/adb/modules/ZDT-D/working_folder/amneziawg/run"
   AMNEZIAWG_UAPI_SOCKET_DIR: "/data/adb/modules/ZDT-D/working_folder/amneziawg/run/amneziawg"
   AMNEZIAWG_GO_UAPI_SOCKET_DIR: "run/amneziawg"
-  WIREPROXY_REF: "v1.1.3"
-  TUN2SOCKS_REF: "v2.7.0"
-  MIHOMO_REF: "v1.19.30"
-  SING_BOX_REF: "v1.14.1"
-  SING_BOX_LX_REF: "v1.14.3-lx.22"
-  HYSTERIA_REF: "v2.12.3"
-  BYEDPI_REF: "v0.17.3"
+  WIREPROXY_REF: "master"
+  TUN2SOCKS_REF: "main"
+  MIHOMO_REF: "Alpha"
+  SING_BOX_REF: "testing"
+  SING_BOX_LX_REF: "lx"
+  HYSTERIA_REF: "v2.13.0"
+  BYEDPI_REF: "main"
   BYEDPI_ANDROID_API_LEVEL: 24
-  DNSCRYPT_PROXY_REF: "2.1.18"
-  MIERU_REF: "v3.38.0"
-  OPERA_PROXY_REF: "v1.28.0"
+  DNSCRYPT_PROXY_REF: "master"
+  MIERU_REF: "main"
+  OPERA_PROXY_REF: "master"
   DPITUNNEL_REF: "main"
   DPITUNNEL_ANDROID_API_LEVEL: 24
   DPITUNNEL_OPENSSL_REF: "openssl-3.5.9"
@@ -64,8 +64,8 @@ env:
   TOR_ZLIB_REF: "v1.3.2"
   TOR_ZSTD_REF: "v1.5.7"
   LYREBIRD_REF: "main"
-  TG_WS_PROXY_REF: "v1.6.4"
-  HEV_SOCKS5_TUNNEL_REF: "2.18.0"
+  TG_WS_PROXY_REF: "v1.7.1"
+  HEV_SOCKS5_TUNNEL_REF: "main"
 
 permissions:
   contents: write
@@ -2193,7 +2193,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '${{ env.GO_VERSION }}'
+          go-version: '1.26.10'
           cache: false
 
       - name: Prepare Android SDK paths for sing-box-lx cgo
@@ -2863,7 +2863,7 @@ jobs:
           mkdir -p "$SRC" "$ARTIFACT_DIR"
 
           echo "=== Fetch official dnscrypt-proxy source ==="
-          git clone --depth 1 --branch "$DNSCRYPT_PROXY_REF" https://github.com/DNSCrypt/dnscrypt-proxy "$SRC/dnscrypt-proxy"
+          git clone --depth 1 --branch "$DNSCRYPT_PROXY_REF" https://github.com/xteamlyer/dnscrypt-proxy "$SRC/dnscrypt-proxy"
           DNSCRYPT_PROXY_COMMIT="$(git -C "$SRC/dnscrypt-proxy" rev-parse HEAD)"
           printf '%s\n' "$DNSCRYPT_PROXY_COMMIT" | tee "$ARTIFACT_DIR/dnscrypt.commit"
 
@@ -3236,7 +3236,7 @@ jobs:
           mkdir -p "$SRC" "$ARTIFACT_DIR"
 
           echo "=== Fetch official opera-proxy source ==="
-          git clone --depth 1 --branch "$OPERA_PROXY_REF" https://github.com/Alexey71/opera-proxy "$SRC/opera-proxy"
+          git clone --depth 1 --branch "$OPERA_PROXY_REF" https://github.com/xteamlyer/opera-proxy "$SRC/opera-proxy"
           OPERA_PROXY_COMMIT="$(git -C "$SRC/opera-proxy" rev-parse HEAD)"
           printf '%s\n' "$OPERA_PROXY_COMMIT" | tee "$ARTIFACT_DIR/opera-proxy.commit"
 
@@ -3684,7 +3684,7 @@ jobs:
           echo "ZAPRET_REF=$ZAPRET_REF"
 
           echo "=== Fetch zapret $ZAPRET_REF ==="
-          git clone --depth 1 --branch "$ZAPRET_REF" https://github.com/bol-van/zapret.git "$SRC/zapret"
+          git clone --depth 1 --branch master https://github.com/bol-van/zapret.git "$SRC/zapret"
           ZAPRET_COMMIT="$(git -C "$SRC/zapret" rev-parse HEAD)"
           echo "$ZAPRET_REF" | tee "$ARTIFACT_DIR/zapret.ref"
           echo "$ZAPRET_COMMIT" | tee "$ARTIFACT_DIR/zapret.commit"
@@ -3953,7 +3953,7 @@ jobs:
           echo "ZAPRET2_REF=$ZAPRET2_REF"
 
           echo "=== Fetch zapret2 $ZAPRET2_REF ==="
-          git clone --depth 1 --branch "$ZAPRET2_REF" https://github.com/bol-van/zapret2.git "$SRC/zapret2"
+          git clone --depth 1 --branch master https://github.com/bol-van/zapret2.git "$SRC/zapret2"
           ZAPRET2_COMMIT="$(git -C "$SRC/zapret2" rev-parse HEAD)"
           echo "$ZAPRET2_REF" | tee "$ARTIFACT_DIR/zapret2.ref"
           echo "$ZAPRET2_COMMIT" | tee "$ARTIFACT_DIR/zapret2.commit"
@@ -6480,7 +6480,7 @@ jobs:
           printf '%s\n' "$ONLINE_MODULE_META" | grep -Fx "moduleVersion=${VERSION_NAME}" >/dev/null || { echo "::error::Online APK module version binding is invalid"; exit 1; }
           printf '%s\n' "$ONLINE_MODULE_META" | grep -Fx "moduleVersionCode=${VERSION_CODE}" >/dev/null || { echo "::error::Online APK module versionCode binding is invalid"; exit 1; }
           printf '%s\n' "$ONLINE_MODULE_META" | grep -Fx "onlineAsset=${MODULE_ASSET}" >/dev/null || { echo "::error::Online APK module asset binding is invalid"; exit 1; }
-          printf '%s\n' "$ONLINE_MODULE_META" | grep -Fx "onlineUrl=https://github.com/GAME-OVER-op/ZDT-D/releases/download/Technical_Assets/${MODULE_ASSET}" >/dev/null || { echo "::error::Online APK module URL binding is invalid"; exit 1; }
+          printf '%s\n' "$ONLINE_MODULE_META" | grep -Fx "onlineUrl=https://github.com/xteamlyer/ZDT-D/releases/download/Technical_Assets/${MODULE_ASSET}" >/dev/null || { echo "::error::Online APK module URL binding is invalid"; exit 1; }
 
           AAPT="$ANDROID_SDK_ROOT/build-tools/${{ env.ANDROID_BUILD_TOOLS_VERSION }}/aapt"
           APKSIGNER="$ANDROID_SDK_ROOT/build-tools/${{ env.ANDROID_BUILD_TOOLS_VERSION }}/apksigner"
