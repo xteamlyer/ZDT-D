@@ -22,6 +22,10 @@ pub(super) const API_PROXY_CHECK_TIMEOUT: Duration = Duration::from_secs(4);
 pub(super) const API_PROXY_LIST_TXT: &str =
     "/data/adb/modules/ZDT-D/working_folder/operaproxy/config/api_proxy_list.txt";
 pub(super) const API_PROXY_LIST_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(15);
+// A failed list download (e.g. HTTP 429) is retried before giving up and
+// starting opera-proxy without an api_proxy. Total attempts per URL = 1 + 29.
+pub(super) const API_PROXY_LIST_DOWNLOAD_ATTEMPTS: u32 = 30;
+pub(super) const API_PROXY_LIST_DOWNLOAD_RETRY_DELAY: Duration = Duration::from_secs(2);
 pub(super) const API_PROXY_LIST_MAX_BYTES: usize = 1024 * 1024;
 // Opera-proxy CA bundle for certificate verification. We keep it fixed to prevent config tampering.
 pub(super) const OPERA_CAFILE: &str = "/data/adb/modules/ZDT-D/strategic/certificate/ca.bundle";

@@ -155,7 +155,7 @@ pub(super) fn collect_api_proxy_candidates_from_urls(urls: &[String], log_path: 
             log_path,
             &format!("downloading api_proxy list: {}", mask_proxy_for_log(url)),
         );
-        match download_api_proxy_list(url) {
+        match download_api_proxy_list_with_retries(url, log_path) {
             Ok(text) => {
                 append_log_line(
                     log_path,
@@ -292,6 +292,51 @@ pub(super) fn download_api_proxy_list(url: &str) -> Result<String> {
     }
 
     Ok(String::from_utf8_lossy(&body).into_owned())
+}
+
+// Downloads the proxy list, retrying up to API_PROXY_LIST_DOWNLOAD_ATTEMPTS
+// attempts when a single download fails (network error, HTTP 429, etc.).
+// A success is returned immediately; only after all attempts are exhausted
+// the caller falls back to starting opera-proxy without an api_proxy.
+fn download_api_proxy_list_with_retries(url: &str, log_path: &Path) -> Result<String> {
+    let mut last_err: Option<anyhow::Error> = None;
+
+    for attempt in 1..=API_PROXY_LIST_DOWNLOAD_ATTEMPTS {
+        match download_api_proxy_list(url) {
+            Ok(text) => {
+                if attempt > 1 {
+                    append_log_line(
+                        log_path,
+                        &format!(
+                            "api_proxy list downloaded from {} on attempt {}/{}",
+                            mask_proxy_for_log(url),
+                            attempt,
+                            API_PROXY_LIST_DOWNLOAD_ATTEMPTS
+                        ),
+                    );
+                }
+                return Ok(text);
+            }
+            Err(e) => {
+                append_log_line(
+                    log_path,
+                    &format!(
+                        "api_proxy list download attempt {}/{} failed from {}: {}",
+                        attempt,
+                        API_PROXY_LIST_DOWNLOAD_ATTEMPTS,
+                        mask_proxy_for_log(url),
+                        e
+                    ),
+                );
+                last_err = Some(e);
+                if attempt < API_PROXY_LIST_DOWNLOAD_ATTEMPTS {
+                    std::thread::sleep(API_PROXY_LIST_DOWNLOAD_RETRY_DELAY);
+                }
+            }
+        }
+    }
+
+    Err(last_err.unwrap_or_else(|| anyhow::anyhow!("api_proxy list download failed")))
 }
 
 pub(super) fn read_api_proxy_list_file(path: &str) -> Result<String> {

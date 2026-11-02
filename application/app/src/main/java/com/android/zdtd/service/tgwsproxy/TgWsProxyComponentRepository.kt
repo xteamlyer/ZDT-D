@@ -312,7 +312,7 @@ class TgWsProxyComponentRepository(
         private const val MODULE_BIN_DIR = "/data/adb/modules/ZDT-D/bin"
         const val MODULE_BIN_PATH = "$MODULE_BIN_DIR/$BINARY_NAME"
         private const val COMPONENT_INFO_PATH = "/data/adb/modules/ZDT-D/working_folder/tgwsproxy/component.json"
-        private const val DOWNLOAD_URL = "https://github.com/GAME-OVER-op/ZDT-D/releases/download/Technical_Assets/tg_ws_proxy.zip"
+        private const val DOWNLOAD_URL = "https://github.com/xteamlyer/ZDT-D/releases/download/Technical_Assets/tg_ws_proxy.zip"
         private const val MIN_EXPECTED_ARCHIVE_BYTES = 128_000L
         private const val MIN_EXPECTED_BINARY_BYTES = 64_000L
         private const val PROGRESS_EMIT_BYTES = 256L * 1024L
