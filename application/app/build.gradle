@@ -50,7 +50,7 @@ def bundledNfqwsTesterAssets = [
 def bundledModuleSha = file("$generatedRootAssetsDir/metadata/zdt_module.sha256")
 def bundledModuleCache = file("$generatedRootAssetsDir/metadata/zdt_module.cache")
 def onlineModuleAssetName = 'zdt_module.zip'
-def technicalAssetsBaseUrl = 'https://github.com/GAME-OVER-op/ZDT-D/releases/download/Technical_Assets'
+def technicalAssetsBaseUrl = 'https://github.com/xteamlyer/ZDT-D/releases/download/Technical_Assets'
 
 def sha256Hex = { File source ->
   def digest = java.security.MessageDigest.getInstance('SHA-256')

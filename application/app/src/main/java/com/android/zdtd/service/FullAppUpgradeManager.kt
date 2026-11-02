@@ -117,7 +117,7 @@ class FullAppUpgradeManager(context: Context) {
 
   private fun fetchLatestRelease(): ReleaseAsset {
     val request = Request.Builder()
-      .url("https://api.github.com/repos/GAME-OVER-op/ZDT-D/releases/latest")
+      .url("https://api.github.com/repos/xteamlyer/ZDT-D/releases/latest")
       .header("User-Agent", "ZDT-D-Android")
       .header("Accept", "application/vnd.github+json")
       .build()
@@ -130,7 +130,7 @@ class FullAppUpgradeManager(context: Context) {
         val asset = assets.optJSONObject(index) ?: continue
         if (asset.optString("name") == FULL_APK_ASSET_NAME) {
           val url = asset.optString("browser_download_url").trim()
-          check(url.startsWith("https://github.com/GAME-OVER-op/ZDT-D/releases/download/")) {
+          check(url.startsWith("https://github.com/xteamlyer/ZDT-D/releases/download/")) {
             "Unexpected full APK download URL"
           }
           return ReleaseAsset(tag, url)
