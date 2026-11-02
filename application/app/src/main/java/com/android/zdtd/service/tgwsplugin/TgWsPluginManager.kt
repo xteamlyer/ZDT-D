@@ -29,7 +29,7 @@ object TgWsPluginContract {
   const val API_VERSION = 1
   const val APK_ASSET = "zdt-d-tgws-plugin.apk"
   const val MANIFEST_ASSET = "tgws-plugin.json"
-  const val TECHNICAL_BASE_URL = "https://github.com/GAME-OVER-op/ZDT-D/releases/download/Technical_Assets"
+  const val TECHNICAL_BASE_URL = "https://github.com/xteamlyer/ZDT-D/releases/download/Technical_Assets"
 }
 
 data class TgWsPluginState(

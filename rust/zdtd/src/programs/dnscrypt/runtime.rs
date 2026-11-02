@@ -206,6 +206,17 @@ pub(super) enum DnscryptWaitResult {
 }
 
 pub(super) fn wait_dnscrypt_ready(listen_port: u16, child: &mut Child) -> Result<DnscryptWaitResult> {
+    // Give DNSCrypt time to initialize before the first readiness probe.
+    // This avoids a noisy warning during an otherwise normal startup.
+    const INITIAL_STARTUP_DELAY: Duration = Duration::from_secs(10);
+
+    if let Some(status) = sleep_while_dnscrypt_running(child, INITIAL_STARTUP_DELAY)? {
+        return Ok(DnscryptWaitResult::Exited(status));
+    }
+    if stop_requested() {
+        return Ok(DnscryptWaitResult::StopRequested);
+    }
+
     let mut delay = Duration::from_secs(5);
 
     loop {
