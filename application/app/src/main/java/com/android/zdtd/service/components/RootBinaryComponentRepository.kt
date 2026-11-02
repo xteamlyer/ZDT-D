@@ -585,7 +585,7 @@ class RootBinaryComponentRepository(
   private fun quote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
 
   companion object {
-    private const val TECHNICAL_ASSETS_BASE = "https://github.com/GAME-OVER-op/ZDT-D/releases/download/Technical_Assets"
+    private const val TECHNICAL_ASSETS_BASE = "https://github.com/xteamlyer/ZDT-D/releases/download/Technical_Assets"
     private const val MODULE_BIN_DIR = "/data/adb/modules/ZDT-D/bin"
     private const val COMPONENT_INFO_DIR = "/data/adb/ZDT-D/component-info"
     private const val MANIFEST_FILE = "manifest.json"

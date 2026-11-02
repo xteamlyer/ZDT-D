@@ -1,10 +1,6 @@
 [
   {
-    "sni": "m.vk.com",
-    "use_byedpi": true
-  },
-  {
-    "sni": "vk.com",
+    "sni": "m.vk.ru",
     "use_byedpi": false
   }
 ]

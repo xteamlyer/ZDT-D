@@ -1,0 +1,238 @@
+my.telegram.org 149.154.167.220
+desktop.telegram.org 149.154.167.220
+macos.telegram.org 149.154.167.220
+oauth.telegram.org 149.154.167.220
+oauth.tg.dev 149.154.167.220
+cdn.telesco.pe 149.154.167.220
+cdn1.telesco.pe 149.154.167.220
+cdn2.telesco.pe 149.154.167.220
+cdn3.telesco.pe 149.154.167.220
+cdn4.telesco.pe 149.154.167.220
+cdn5.telesco.pe 149.154.167.220
+cdn6.telesco.pe 149.154.167.220
+core.telegram.org 149.154.167.220
+zws4.web.telegram.org 149.154.167.220
+vesta.web.telegram.org 149.154.167.220
+vesta-1.web.telegram.org 149.154.167.220
+venus-1.web.telegram.org 149.154.167.220
+telegram.me 149.154.167.220
+telegram.dog 149.154.167.220
+telegram.space 149.154.167.220
+telesco.pe 149.154.167.220
+tg.dev 149.154.167.220
+telegram.org 149.154.167.220
+t.me 149.154.167.220
+api.telegram.org 149.154.167.220
+td.telegram.org 149.154.167.220
+venus.web.telegram.org 149.154.167.220
+web.telegram.org 149.154.167.220
+kws2-1.web.telegram.org 149.154.167.220
+kws2.web.telegram.org 149.154.167.220
+kws4-1.web.telegram.org 149.154.167.220
+kws4.web.telegram.org 149.154.167.220
+zws2-1.web.telegram.org 149.154.167.220
+zws2.web.telegram.org 149.154.167.220
+zws4-1.web.telegram.org 149.154.167.220
+
+discord.com 162.159.138.232
+discord.com 162.159.137.232
+discord.com 162.159.128.233
+discord.com 162.159.135.232
+updates.discord.com 162.159.138.232
+updates.discord.com 162.159.137.232
+updates.discord.com 162.159.128.233
+updates.discord.com 162.159.135.232
+
+### dns.malw.link: hosts file
+# Последнее обновление: 14 ноября 2026
+
+test.dns.malw.link 185.31.40.18
+ntc.party 130.255.77.28
+game.clashroyaleapp.com 179.254.166.171
+gamea.clashofclans.com 164.5.224.81
+game.brawlstarsgame.com 48.102.233.174
+game.mocogame.com 179.254.166.171
+instagram.com 57.144.248.34
+www.instagram.com 57.144.248.34
+b.i.instagram.com 57.144.248.34
+z-p42-chat-e2ee-ig.facebook.com 57.144.248.34
+help.instagram.com 57.144.248.34
+
+chatgpt.com 217.60.179.6
+ab.chatgpt.com 217.60.179.6
+auth.openai.com 217.60.179.6
+auth0.openai.com 217.60.179.6
+platform.openai.com 217.60.179.6
+cdn.oaistatic.com 217.60.179.6
+files.oaiusercontent.com 217.60.179.6
+tcr9i.chat.openai.com 217.60.179.6
+webrtc.chatgpt.com 217.60.179.6
+android.chat.openai.com 217.60.179.6
+api.openai.com 217.60.179.6
+operator.chatgpt.com 217.60.179.6
+sora.chatgpt.com 217.60.179.6
+videos.openai.com 217.60.179.6
+ios.chat.openai.com 217.60.179.6
+cdn.platform.openai.com 217.60.179.6
+developers.openai.com 217.60.179.6
+sdmntprukwest.oaiusercontent.com 217.60.179.6
+sdmntpritalynorth.oaiusercontent.com 217.60.179.6
+sdmntprpolandcentral.oaiusercontent.com 217.60.179.6
+sdmntprnortheu.oaiusercontent.com 217.60.179.6
+
+copilot.microsoft.com 217.60.179.6
+sydney.bing.com 217.60.179.6
+edgeservices.bing.com 217.60.179.6
+rewards.bing.com 217.60.179.6
+xsts.auth.xboxlive.com 217.60.179.6
+xgpuwebf2p.gssv-play-prod.xboxlive.com 217.60.179.6
+xgpuweb.gssv-play-prod.xboxlive.com 217.60.179.6
+
+api.spotify.com 217.60.179.6
+login5.spotify.com 217.60.179.6
+encore.scdn.co 217.60.179.6
+gew1-spclient.spotify.com 217.60.179.6
+spclient.wg.spotify.com 217.60.179.6
+api-partner.spotify.com 217.60.179.6
+www.spotify.com 217.60.179.6
+accounts.spotify.com 217.60.179.6
+open.spotify.com 217.60.179.6
+accounts.scdn.co 217.60.179.6
+gew1-dealer.spotify.com 217.60.179.6
+www-growth.scdn.co 217.60.179.6
+
+api.individual.githubcopilot.com 217.60.179.6
+proxy.individual.githubcopilot.com 217.60.179.6
+
+datalore.jetbrains.com 217.60.179.6
+plugins.jetbrains.com 217.60.179.6
+download.jetbrains.com 217.60.179.6
+api.jetbrains.ai 217.60.179.6
+account.jetbrains.com 217.60.179.6
+
+elevenlabs.io 217.60.179.6
+api.us.elevenlabs.io 217.60.179.6
+elevenreader.io 217.60.179.6
+api.elevenlabs.io 217.60.179.6
+help.elevenlabs.io 217.60.179.6
+
+grok.com 217.60.179.6
+accounts.x.ai 217.60.179.6
+assets.grok.com 217.60.179.6
+
+api.tidal.com 217.60.179.6
+listen.tidal.com 217.60.179.6
+login.tidal.com 217.60.179.6
+auth.tidal.com 217.60.179.6
+link.tidal.com 217.60.179.6
+dd.tidal.com 217.60.179.6
+resources.tidal.com 217.60.179.6
+images.tidal.com 217.60.179.6
+geolocation.onetrust.com 217.60.179.6
+api.squareup.com 217.60.179.6
+api-global.squareup.com 217.60.179.6
+
+cdn.id.supercell.com 217.60.179.6
+security.id.supercell.com 217.60.179.6
+accounts.supercell.com 217.60.179.6
+game-assets.clashroyaleapp.com 217.60.179.6
+game-assets.clashofclans.com 217.60.179.6
+clashofclans.inbox.supercell.com 217.60.179.6
+game-assets.brawlstarsgame.com 217.60.179.6
+store.supercell.com 217.60.179.6
+
+deepl.com 217.60.179.6
+www.deepl.com 217.60.179.6
+www2.deepl.com 217.60.179.6
+login-wall.deepl.com 217.60.179.6
+w.deepl.com 217.60.179.6
+dict.deepl.com 217.60.179.6
+ita-free.www.deepl.com 217.60.179.6
+write-free.www.deepl.com 217.60.179.6
+ita-free.app.deepl.com 217.60.179.6
+shield.deepl.com 217.60.179.6
+ott.deepl.com 217.60.179.6
+api-free.deepl.com 217.60.179.6
+backend.deepl.com 217.60.179.6
+clearance.deepl.com 217.60.179.6
+errortracking.deepl.com 217.60.179.6
+auth.deepl.com 217.60.179.6
+oneshot-free.www.deepl.com 217.60.179.6
+checkout.www.deepl.com 217.60.179.6
+gtm.deepl.com 217.60.179.6
+voice-proxy.www.deepl.com 217.60.179.6
+
+deezer.com 217.60.179.6
+www.deezer.com 217.60.179.6
+payment.deezer.com 217.60.179.6
+
+weather.com 217.60.179.6
+upsx.weather.com 217.60.179.6
+
+api.fitbit.com 48.102.233.174
+fitbit-pa.googleapis.com 48.102.233.174
+fitbitvestibuleshim-pa.googleapis.com 48.102.233.174
+fitbit.google.com 48.102.233.174
+gemini.google.com 48.102.233.174
+geminiweb-pa.clients6.google.com 48.102.233.174
+aistudio.google.com 48.102.233.174
+generativelanguage.googleapis.com 48.102.233.174
+aitestkitchen.withgoogle.com 48.102.233.174
+aisandbox-pa.googleapis.com 48.102.233.174
+webchannel-alkalimakersuite-pa.clients6.google.com 48.102.233.174
+alkalimakersuite-pa.clients6.google.com 48.102.233.174
+assistant-s3-pa.googleapis.com 48.102.233.174
+proactivebackend-pa.googleapis.com 48.102.233.174
+robinfrontend-pa.googleapis.com 48.102.233.174
+o.pki.goog 48.102.233.174
+labs.google 48.102.233.174
+notebooklm.google.com 48.102.233.174
+jules.google.com 48.102.233.174
+stitch.withgoogle.com 48.102.233.174
+flow.google.com 48.102.233.174
+notebook.google.com 48.102.233.174
+
+claude.ai 217.60.179.6
+console.anthropic.com 217.60.179.6
+api.anthropic.com 217.60.179.6
+platform.claude.com 217.60.179.6
+a.claude.ai 217.60.179.6
+
+linear.app 217.60.179.6
+client-api.linear.app 217.60.179.6
+static.linear.app 217.60.179.6
+constellation.linear.app 217.60.179.6
+uploads.linear.app 217.60.179.6
+public.linear.app 217.60.179.6
+s.linear.app 217.60.179.6
+
+usher.ttvnw.net 217.60.179.6
+gql.twitch.tv 217.60.179.6
+
+www.notion.so 217.60.179.6
+calendar.notion.so 217.60.179.6
+app.notion.com 217.60.179.6
+
+www.canva.com 217.60.179.6
+content-management-files.canva.com 217.60.179.6
+static.canva.com 217.60.179.6
+
+www.tiktok.com 217.60.179.6
+
+web.archive.org 217.60.179.6
+
+developer.nvidia.com 217.60.179.6
+
+builds.parsec.app 217.60.179.6
+
+truthsocial.com 217.60.179.6
+static-assets-1.truthsocial.com 217.60.179.6
+
+api.imgur.com 217.60.179.6
+
+dyson.com 217.60.179.6
+www.dyson.com 217.60.179.6
+www.dyson.fr 217.60.179.6
+
+patreon.com 217.60.179.6
+www.patreon.com 217.60.179.6
