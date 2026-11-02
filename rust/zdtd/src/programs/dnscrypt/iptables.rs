@@ -340,7 +340,7 @@ pub(super) fn apply_dns_ip6tables(listen_port: u16) -> Result<()> {
         }
     } else {
         warn!("dns: ip6tables nat table unsupported; disabling IPv6 DNS ports (53/853/5353)");
-        crate::logging::user_warn("DNSCrypt: IPv6 NAT не поддерживается — IPv6 DNS-порты 53/853/5353 отключены");
+        // crate::logging::user_warn("DNSCrypt: IPv6 NAT не поддерживается — IPv6 DNS-порты 53/853/5353 отключены");
         set_ipv6_disabled_resetprops();
 
         // Remove RETURN exceptions for 53 (otherwise they would bypass the block).
