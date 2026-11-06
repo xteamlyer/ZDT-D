@@ -6053,8 +6053,8 @@ jobs:
       - name: Mark APK tools ready
         run: echo "APK helper artifacts and hev AAR are ready for APK packaging"
 
-  build_apk:
-    name: build bundled, online and non-root APKs
+  publish_apk_build_start:
+    name: Publish APK build start
     runs-on: ubuntu-latest
     needs:
       - pack_module
@@ -6062,95 +6062,51 @@ jobs:
     if: >-
       needs.pack_module.result == 'success' &&
       needs.apk_tools_ready.result == 'success'
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
       - name: Publish APK stage
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/ci/publish-build-status.sh apk running preparing "Building Android application"
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v6
+  build_apk_variant:
+    name: Build ${{ matrix.flavor }} APK
+    runs-on: ubuntu-latest
+    needs:
+      - pack_module
+      - apk_tools_ready
+      - publish_apk_build_start
+    if: >-
+      needs.pack_module.result == 'success' &&
+      needs.apk_tools_ready.result == 'success' &&
+      needs.publish_apk_build_start.result == 'success'
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        include:
+          - flavor: bundled
+            gradle_task: assembleBundled
+          - flavor: online
+            gradle_task: assembleOnline
+          - flavor: nonroot
+            gradle_task: assembleNonroot
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
         with:
-          distribution: temurin
-          java-version: '17'
+          fetch-depth: 0
 
-      - name: Prepare Android SDK paths
-        run: |
-          set -euo pipefail
-          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          ANDROID_HOME="$ANDROID_SDK_ROOT"
-          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
-          fi
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
-            exit 1
-          fi
-          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
-          {
-            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-            echo "ANDROID_HOME=$ANDROID_HOME"
-            echo "SDKMANAGER=$SDKMANAGER"
-            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
-          } >> "$GITHUB_ENV"
-          yes 2>/dev/null | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
-
-      - name: Install Android SDK packages
-        run: |
-          set -euo pipefail
-          yes 2>/dev/null | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-          install_sdk_package() {
-            local pkg="$1"
-            local attempt
-            for attempt in 1 2 3 4 5; do
-              echo "sdkmanager install $pkg: attempt $attempt/5"
-              if "$SDKMANAGER" "$pkg"; then
-                return 0
-              fi
-              if [[ "$pkg" == platforms\;android-37.* ]]; then
-                echo "sdkmanager retry $pkg through preview/canary channel"
-                if "$SDKMANAGER" --channel=3 "$pkg"; then
-                  return 0
-                fi
-              fi
-              rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.downloadIntermediates" 2>/dev/null || true
-              sleep $((attempt * 8))
-            done
-            echo "::error::Unable to install Android SDK package: $pkg"
-            return 1
-          }
-          install_sdk_package "platform-tools"
-          install_sdk_package "platforms;android-${{ env.ANDROID_API_LEVEL }}"
-          test -s "$ANDROID_SDK_ROOT/platforms/android-${{ env.ANDROID_API_LEVEL }}/android.jar" || {
-            echo "::error::Android SDK platform android-${{ env.ANDROID_API_LEVEL }} was not installed correctly"
-            exit 1
-          }
-          install_sdk_package "build-tools;${{ env.ANDROID_BUILD_TOOLS_VERSION }}"
-          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NATIVE_NDK_VERSION" ]]; then
-            install_sdk_package "ndk;$NATIVE_NDK_VERSION"
-          fi
-          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NATIVE_NDK_VERSION"
-          if [[ ! -d "$NDK_ROOT" ]]; then
-            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
-            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
-          fi
-          echo "NDK_ROOT=$NDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_NDK_ROOT=$NDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_NDK_HOME=$NDK_ROOT" >> "$GITHUB_ENV"
-
-      - name: Setup Gradle ${{ env.GRADLE_VERSION }}
-        uses: gradle/actions/setup-gradle@v6
+      - name: Set up Android build environment
+        uses: ./.github/actions/setup-android-build
         with:
+          android-api-level: ${{ env.ANDROID_API_LEVEL }}
+          build-tools-version: ${{ env.ANDROID_BUILD_TOOLS_VERSION }}
+          ndk-version: ${{ env.NATIVE_NDK_VERSION }}
           gradle-version: ${{ env.GRADLE_VERSION }}
-          cache-read-only: false
+          install-ndk: 'true'
 
       - name: Download module archive
         uses: actions/download-artifact@v8
@@ -6359,7 +6315,7 @@ jobs:
             ls -lh "$DST"
           done
 
-      - name: Build bundled, online and non-root APKs
+      - name: Build ${{ matrix.flavor }} APK
         working-directory: ${{ env.GRADLE_PROJECT_DIR }}
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
@@ -6374,25 +6330,86 @@ jobs:
             "-PzdtCompileSdkMinor=${{ env.ZDT_COMPILE_SDK_MINOR }}"
             "-PzdtRequireHevAar=true"
           )
-          # Compile one distribution at a time. Running three Kotlin/FIR
-          # compilations together can exhaust the GitHub runner heap.
-          gradle "${GRADLE_ARGS[@]}" "assembleBundled${{ env.BUILD_TYPE }}"
-          gradle "${GRADLE_ARGS[@]}" "assembleOnline${{ env.BUILD_TYPE }}"
-          gradle "${GRADLE_ARGS[@]}" "assembleNonroot${{ env.BUILD_TYPE }}"
+          gradle "${GRADLE_ARGS[@]}" "${{ matrix.gradle_task }}${{ env.BUILD_TYPE }}"
 
-      - name: Collect final artifacts
+      - name: Collect APK variant
+        run: |
+          set -euo pipefail
+          BUILD_TYPE_LOWER="$(printf '%s' "$BUILD_TYPE" | tr '[:upper:]' '[:lower:]')"
+          APK="$(find "$GRADLE_PROJECT_DIR" -path "*/build/outputs/apk/${{ matrix.flavor }}/${BUILD_TYPE_LOWER}/*.apk" -type f | sort | tail -1)"
+          test -s "$APK" || { echo "::error::Expected APK for flavor ${{ matrix.flavor }} was not produced"; exit 1; }
+          unzip -Z1 "$APK" | grep -Fx 'AndroidManifest.xml' >/dev/null || { echo "::error::Invalid APK: $APK"; exit 1; }
+          mkdir -p out/apk
+          cp -f "$APK" out/apk/app-release.apk
+          ls -lh out/apk/app-release.apk
+
+      - name: Upload APK variant
+        uses: actions/upload-artifact@v7
+        with:
+          name: zdt-apk-${{ matrix.flavor }}
+          path: out/apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 1
+
+  build_apk:
+    name: Assemble and validate APK artifacts
+    runs-on: ubuntu-latest
+    needs:
+      - pack_module
+      - apk_tools_ready
+      - build_apk_variant
+    if: >-
+      always() &&
+      needs.pack_module.result == 'success' &&
+      needs.apk_tools_ready.result == 'success' &&
+      needs.build_apk_variant.result == 'success'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Android validation environment
+        uses: ./.github/actions/setup-android-build
+        with:
+          android-api-level: ${{ env.ANDROID_API_LEVEL }}
+          build-tools-version: ${{ env.ANDROID_BUILD_TOOLS_VERSION }}
+          ndk-version: ${{ env.NATIVE_NDK_VERSION }}
+          gradle-version: ${{ env.GRADLE_VERSION }}
+          install-ndk: 'false'
+
+      - name: Download bundled APK
+        uses: actions/download-artifact@v8
+        with:
+          name: zdt-apk-bundled
+          path: out/apks/bundled
+
+      - name: Download online APK
+        uses: actions/download-artifact@v8
+        with:
+          name: zdt-apk-online
+          path: out/apks/online
+
+      - name: Download non-root APK
+        uses: actions/download-artifact@v8
+        with:
+          name: zdt-apk-nonroot
+          path: out/apks/nonroot
+
+      - name: Download module archive
+        uses: actions/download-artifact@v8
+        with:
+          name: zdt-module-zip
+          path: out/module
+
+      - name: Validate and collect final artifacts
         run: |
           set -euo pipefail
           mkdir -p out/dist
 
-          BUILD_TYPE_LOWER="$(printf '%s' "$BUILD_TYPE" | tr '[:upper:]' '[:lower:]')"
-          find_variant_apk() {
-            local flavor="$1"
-            find "$GRADLE_PROJECT_DIR" -path "*/build/outputs/apk/${flavor}/${BUILD_TYPE_LOWER}/*.apk" -type f | sort | tail -1
-          }
-          BUNDLED_APK="$(find_variant_apk bundled)"
-          ONLINE_APK="$(find_variant_apk online)"
-          NONROOT_APK="$(find_variant_apk nonroot)"
+          BUNDLED_APK="out/apks/bundled/app-release.apk"
+          ONLINE_APK="out/apks/online/app-release.apk"
+          NONROOT_APK="out/apks/nonroot/app-release.apk"
           for apk in "$BUNDLED_APK" "$ONLINE_APK" "$NONROOT_APK"; do
             test -s "$apk" || { echo "::error::Expected APK does not exist: $apk"; exit 1; }
             unzip -Z1 "$apk" | grep -Fx 'AndroidManifest.xml' >/dev/null || { echo "::error::Invalid APK: $apk"; exit 1; }
@@ -6590,6 +6607,7 @@ jobs:
             out/dist/app-release.apk
             out/dist/app-release-online.apk
             out/dist/app-release-nonroot.apk
+          if-no-files-found: error
           retention-days: 30
 
       - name: Upload module artifact
@@ -6597,6 +6615,7 @@ jobs:
         with:
           name: zdt-module-final
           path: out/dist/zdt_module.zip
+          if-no-files-found: error
           retention-days: 30
 
       - name: Publish APK completion
@@ -7427,6 +7446,8 @@ jobs:
       - module_zygisk_ready
       - pack_module
       - apk_tools_ready
+      - publish_apk_build_start
+      - build_apk_variant
       - build_apk
       - build_tgws_plugin_apk
       - publish_service
@@ -7439,6 +7460,8 @@ jobs:
        needs.module_zygisk_ready.result != 'success' ||
        needs.pack_module.result != 'success' ||
        needs.apk_tools_ready.result != 'success' ||
+       needs.publish_apk_build_start.result != 'success' ||
+       needs.build_apk_variant.result != 'success' ||
        needs.build_apk.result != 'success' ||
        needs.build_tgws_plugin_apk.result != 'success' ||
        needs.publish_service.result != 'success')
