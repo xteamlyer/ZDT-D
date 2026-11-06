@@ -1,0 +1,162 @@
+name: Set up Android build environment
+description: Configure JDK, Android SDK/NDK and Gradle for ZDT-D Android jobs.
+
+inputs:
+  android-api-level:
+    description: Android SDK platform API level.
+    required: true
+  build-tools-version:
+    description: Android Build Tools version.
+    required: true
+  ndk-version:
+    description: Android NDK version.
+    required: true
+  gradle-version:
+    description: Gradle version.
+    required: true
+  install-ndk:
+    description: Whether to install and configure the Android NDK.
+    required: false
+    default: 'true'
+  install-platform:
+    description: Whether to install Android platform and platform-tools.
+    required: false
+    default: 'true'
+  setup-gradle:
+    description: Whether to install/configure the requested Gradle version.
+    required: false
+    default: 'true'
+  setup-jdk:
+    description: Whether to configure JDK 17.
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - name: Set up JDK 17
+      if: ${{ inputs.setup-jdk == 'true' }}
+      uses: actions/setup-java@v6
+      with:
+        distribution: temurin
+        java-version: '17'
+
+    - name: Resolve Android SDK location
+      id: sdk
+      shell: bash
+      env:
+        ANDROID_API_LEVEL: ${{ inputs.android-api-level }}
+        BUILD_TOOLS_VERSION: ${{ inputs.build-tools-version }}
+        NDK_VERSION: ${{ inputs.ndk-version }}
+      run: |
+        set -euo pipefail
+        ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+        ANDROID_HOME="$ANDROID_SDK_ROOT"
+        SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+        if [[ ! -x "$SDKMANAGER" ]]; then
+          SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
+        fi
+        test -x "$SDKMANAGER" || { echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"; exit 1; }
+        {
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "SDKMANAGER=$SDKMANAGER"
+          echo "PATH=$(dirname "$SDKMANAGER"):$PATH"
+        } >> "$GITHUB_ENV"
+        echo "sdk_root=$ANDROID_SDK_ROOT" >> "$GITHUB_OUTPUT"
+        if [[ -n "$NDK_VERSION" && -x "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION/ndk-build" ]]; then
+          echo "ndk_preinstalled=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "ndk_preinstalled=false" >> "$GITHUB_OUTPUT"
+        fi
+        if [[ -x "$ANDROID_SDK_ROOT/platform-tools/adb" && \
+              -s "$ANDROID_SDK_ROOT/platforms/android-$ANDROID_API_LEVEL/android.jar" && \
+              -x "$ANDROID_SDK_ROOT/build-tools/$BUILD_TOOLS_VERSION/aapt" && \
+              -x "$ANDROID_SDK_ROOT/build-tools/$BUILD_TOOLS_VERSION/apksigner" ]]; then
+          echo "sdk_packages_preinstalled=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "sdk_packages_preinstalled=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Cache Android SDK platform and Build Tools
+      if: ${{ steps.sdk.outputs.sdk_packages_preinstalled != 'true' }}
+      uses: actions/cache@v6
+      with:
+        path: |
+          ${{ steps.sdk.outputs.sdk_root }}/platform-tools
+          ${{ steps.sdk.outputs.sdk_root }}/platforms/android-${{ inputs.android-api-level }}
+          ${{ steps.sdk.outputs.sdk_root }}/build-tools/${{ inputs.build-tools-version }}
+        key: android-sdk-${{ runner.os }}-${{ inputs.android-api-level }}-${{ inputs.build-tools-version }}-v3
+
+    - name: Cache Android NDK
+      if: ${{ inputs.install-ndk == 'true' && steps.sdk.outputs.ndk_preinstalled != 'true' }}
+      uses: actions/cache@v6
+      with:
+        path: ${{ steps.sdk.outputs.sdk_root }}/ndk/${{ inputs.ndk-version }}
+        key: android-ndk-${{ runner.os }}-ubuntu-24.04-${{ inputs.ndk-version }}-v2
+
+    - name: Install required Android SDK packages
+      shell: bash
+      env:
+        INSTALL_NDK: ${{ inputs.install-ndk }}
+        INSTALL_PLATFORM: ${{ inputs.install-platform }}
+        ANDROID_API_LEVEL: ${{ inputs.android-api-level }}
+        BUILD_TOOLS_VERSION: ${{ inputs.build-tools-version }}
+        NDK_VERSION: ${{ inputs.ndk-version }}
+      run: |
+        set -euo pipefail
+        licenses_accepted=false
+
+        install_sdk_package() {
+          local pkg="$1"
+          if [[ "$licenses_accepted" != true ]]; then
+            yes 2>/dev/null | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+            licenses_accepted=true
+          fi
+          local attempt
+          for attempt in 1 2 3 4 5; do
+            echo "sdkmanager install $pkg: attempt $attempt/5"
+            if "$SDKMANAGER" "$pkg"; then return 0; fi
+            if [[ "$pkg" == platforms\;android-37* ]]; then
+              if "$SDKMANAGER" --channel=3 "$pkg"; then return 0; fi
+            fi
+            rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.downloadIntermediates" 2>/dev/null || true
+            sleep $((attempt * 8))
+          done
+          echo "::error::Unable to install Android SDK package: $pkg"
+          return 1
+        }
+
+        if [[ "$INSTALL_PLATFORM" == 'true' ]]; then
+          [[ -x "$ANDROID_SDK_ROOT/platform-tools/adb" ]] || install_sdk_package platform-tools
+          [[ -s "$ANDROID_SDK_ROOT/platforms/android-${ANDROID_API_LEVEL}/android.jar" ]] || install_sdk_package "platforms;android-${ANDROID_API_LEVEL}"
+          test -s "$ANDROID_SDK_ROOT/platforms/android-${ANDROID_API_LEVEL}/android.jar" || {
+            echo "::error::Android SDK platform android-${ANDROID_API_LEVEL} is missing"; exit 1;
+          }
+        fi
+
+        BUILD_TOOLS="$ANDROID_SDK_ROOT/build-tools/$BUILD_TOOLS_VERSION"
+        if [[ ! -x "$BUILD_TOOLS/aapt" || ! -x "$BUILD_TOOLS/apksigner" ]]; then
+          install_sdk_package "build-tools;${BUILD_TOOLS_VERSION}"
+        fi
+        test -x "$BUILD_TOOLS/aapt" && test -x "$BUILD_TOOLS/apksigner" || {
+          echo "::error::Android Build Tools are incomplete: $BUILD_TOOLS"; exit 1;
+        }
+
+        if [[ "$INSTALL_NDK" == 'true' ]]; then
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -x "$NDK_ROOT/ndk-build" ]]; then install_sdk_package "ndk;${NDK_VERSION}"; fi
+          test -x "$NDK_ROOT/ndk-build" || { echo "::error::Android NDK is incomplete: $NDK_ROOT"; exit 1; }
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+          } >> "$GITHUB_ENV"
+        fi
+
+    - name: Set up Gradle ${{ inputs.gradle-version }}
+      if: ${{ inputs.setup-gradle == 'true' }}
+      uses: gradle/actions/setup-gradle@v6
+      with:
+        gradle-version: ${{ inputs.gradle-version }}
+        cache-read-only: ${{ github.ref != 'refs/heads/main' }}
