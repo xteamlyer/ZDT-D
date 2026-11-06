@@ -3287,7 +3287,7 @@ jobs:
 
   build_dpitunnel:
     name: build DPITunnel ${{ matrix.abi }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
 
@@ -4102,7 +4102,7 @@ jobs:
 
   build_torproxy:
     name: build Tor ${{ matrix.abi }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
 
