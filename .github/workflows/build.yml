@@ -72,12 +72,13 @@ permissions:
   copilot-requests: write
 
 jobs:
-  check_paths:
-    name: Check tracked changes
+  build_gate:
+    name: ZDT-D build gate
     runs-on: ubuntu-latest
     outputs:
-      paths_changed: ${{ steps.detect.outputs.paths_changed }}
-      reason: ${{ steps.detect.outputs.reason }}
+      should_build: ${{ steps.gate.outputs.should_build }}
+      reason: ${{ steps.gate.outputs.reason }}
+      build_start_ts: ${{ steps.gate.outputs.build_start_ts }}
 
     steps:
       - name: Checkout repository
@@ -85,25 +86,31 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Detect tracked build paths
-        id: detect
+      - name: Detect changes and decide whether to build
+        id: gate
         env:
           EVENT_NAME: ${{ github.event_name }}
           BEFORE_SHA: ${{ github.event.before }}
           HEAD_SHA: ${{ github.sha }}
+          FORCE_PHRASE: auto run compile
         run: |
           set -euo pipefail
 
           paths_changed=false
-          reason="No tracked build paths changed"
+          path_reason="No tracked build paths changed"
+          force_compile=false
+          force_reason="Force phrase not found"
           changed_files=""
+          commit_messages=""
 
           if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-            reason="Manual workflow_dispatch run; path check is bypassed by build gate"
+            should_build=true
+            reason="Manual workflow_dispatch run"
+            path_reason="Manual workflow_dispatch run"
+            force_reason="Manual workflow_dispatch run"
           else
             base="$BEFORE_SHA"
             head="$HEAD_SHA"
-
             if [[ -z "$base" || "$base" =~ ^0+$ ]] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
               if git rev-parse "${head}^" >/dev/null 2>&1; then
                 base="$(git rev-parse "${head}^")"
@@ -114,32 +121,40 @@ jobs:
 
             if [[ -n "$base" ]]; then
               changed_files="$(git diff --name-only "$base" "$head" || true)"
+              commit_messages="$(git log --format=%B "${base}..${head}" || true)"
             else
               changed_files="$(git diff-tree --no-commit-id --name-only -r "$head" || true)"
+              commit_messages="$(git log -1 --format=%B "$head" || true)"
             fi
 
-            if printf '%s\n' "$changed_files" | grep -Eq '^(application/|plugin/|zygisk/|rust/|module_template/|prebuilt/|scripts/module/|\.github/workflows/build\.yml$|module\.prop$)'; then
+            if printf '%s\n' "$changed_files" | grep -Eq '^(application/|plugin/|zygisk/|rust/|module_template/|prebuilt/|scripts/module/|scripts/ci/|\.github/actions/|\.github/workflows/build\.yml$|module\.prop$)'; then
               paths_changed=true
-              reason="Tracked build paths changed"
+              path_reason="Tracked build paths changed"
+            fi
+            if printf '%s\n' "$commit_messages" | grep -qiF "$FORCE_PHRASE"; then
+              force_compile=true
+              force_reason="Commit message contains '$FORCE_PHRASE'"
+            fi
+
+            should_build=false
+            reason="No build-related changes detected"
+            if [[ "$force_compile" == "true" ]]; then
+              should_build=true
+              reason="$force_reason"
+            elif [[ "$paths_changed" == "true" ]]; then
+              should_build=true
+              reason="$path_reason"
             fi
           fi
 
+          build_start_ts="$(date +%s)"
           {
-            echo "### Check tracked changes"
+            echo "### ZDT-D build gate"
             echo
-            echo "Paths changed: \`$paths_changed\`"
+            echo "Should build: \`$should_build\`"
             echo "Reason: $reason"
-            echo
-            echo "Tracked paths:"
-            echo "- application/**"
-            echo "- plugin/**"
-            echo "- zygisk/**"
-            echo "- rust/**"
-            echo "- module_template/**"
-            echo "- prebuilt/**"
-            echo "- scripts/module/**"
-            echo "- .github/workflows/build.yml"
-            echo "- module.prop"
+            echo "Tracked paths changed: $paths_changed"
+            echo "Force phrase matched: $force_compile"
             if [[ -n "$changed_files" ]]; then
               echo
               echo "Changed files:"
@@ -147,152 +162,18 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-          echo "paths_changed=$paths_changed" >> "$GITHUB_OUTPUT"
-          echo "reason=$reason" >> "$GITHUB_OUTPUT"
-
-  check_force_phrase:
-    name: Check manual compile phrase
-    runs-on: ubuntu-latest
-    outputs:
-      force_compile: ${{ steps.detect.outputs.force_compile }}
-      reason: ${{ steps.detect.outputs.reason }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Detect force phrase
-        id: detect
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BEFORE_SHA: ${{ github.event.before }}
-          HEAD_SHA: ${{ github.sha }}
-          FORCE_PHRASE: auto run compile
-        run: |
-          set -euo pipefail
-
-          force_compile=false
-          reason="Force phrase not found"
-          commit_messages=""
-
-          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-            reason="Manual workflow_dispatch run; force phrase check is bypassed by build gate"
-          else
-            base="$BEFORE_SHA"
-            head="$HEAD_SHA"
-
-            if [[ -z "$base" || "$base" =~ ^0+$ ]] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
-              if git rev-parse "${head}^" >/dev/null 2>&1; then
-                base="$(git rev-parse "${head}^")"
-              else
-                base=""
-              fi
-            fi
-
-            if [[ -n "$base" ]]; then
-              commit_messages="$(git log --format=%B "${base}..${head}" || true)"
-            else
-              commit_messages="$(git log -1 --format=%B "$head" || true)"
-            fi
-
-            if printf '%s\n' "$commit_messages" | grep -qiF "$FORCE_PHRASE"; then
-              force_compile=true
-              reason="Commit message contains '$FORCE_PHRASE'"
-            fi
-          fi
-
           {
-            echo "### Check manual compile phrase"
-            echo
-            echo "Force compile: \`$force_compile\`"
-            echo "Reason: $reason"
-            echo
-            echo "Force phrase: \`$FORCE_PHRASE\`"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          echo "force_compile=$force_compile" >> "$GITHUB_OUTPUT"
-          echo "reason=$reason" >> "$GITHUB_OUTPUT"
-
-  build_gate:
-    name: ZDT-D build gate
-    runs-on: ubuntu-latest
-    needs:
-      - check_paths
-      - check_force_phrase
-    outputs:
-      should_build: ${{ steps.gate.outputs.should_build }}
-      reason: ${{ steps.gate.outputs.reason }}
-      build_start_ts: ${{ steps.gate.outputs.build_start_ts }}
-
-    steps:
-      - name: Decide whether to compile
-        id: gate
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          PATHS_CHANGED: ${{ needs.check_paths.outputs.paths_changed }}
-          FORCE_COMPILE: ${{ needs.check_force_phrase.outputs.force_compile }}
-          PATH_REASON: ${{ needs.check_paths.outputs.reason }}
-          FORCE_REASON: ${{ needs.check_force_phrase.outputs.reason }}
-        run: |
-          set -euo pipefail
-
-          should_build=false
-          reason="No build-related changes detected"
-
-          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-            should_build=true
-            reason="Manual workflow_dispatch run"
-          elif [[ "$FORCE_COMPILE" == "true" ]]; then
-            should_build=true
-            reason="$FORCE_REASON"
-          elif [[ "$PATHS_CHANGED" == "true" ]]; then
-            should_build=true
-            reason="$PATH_REASON"
-          fi
-
-          build_start_ts="$(date +%s)"
-
-          {
-            echo "### ZDT-D build gate"
-            echo
-            echo "Should build: \`$should_build\`"
-            echo "Reason: $reason"
-            echo
-            echo "Inputs:"
-            echo "- Tracked paths changed: \`$PATHS_CHANGED\`"
-            echo "- Force phrase matched: \`$FORCE_COMPILE\`"
-            echo "- Event: \`$EVENT_NAME\`"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          echo "should_build=$should_build" >> "$GITHUB_OUTPUT"
-          echo "reason=$reason" >> "$GITHUB_OUTPUT"
-          echo "build_start_ts=$build_start_ts" >> "$GITHUB_OUTPUT"
-
-          echo "should_build=$should_build"
-          echo "reason=$reason"
-
-  publish_build_status_start:
-    name: Publish build status start
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    needs: build_gate
-    if: needs.build_gate.outputs.should_build == 'true' && github.ref == 'refs/heads/main'
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Publish binaries stage
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash scripts/ci/publish-build-status.sh binaries running preparing "Building native components"
+            echo "should_build=$should_build"
+            echo "reason=$reason"
+            echo "build_start_ts=$build_start_ts"
+          } >> "$GITHUB_OUTPUT"
 
   build_zdtd:
     name: build zdtd ${{ matrix.abi }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      statuses: write
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
 
@@ -329,43 +210,48 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
+
+      - name: Publish binaries stage
+        if: matrix.abi == 'arm64-v8a' && github.ref == 'refs/heads/main'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/publish-build-status.sh binaries running preparing "Building native components"
 
       - name: Prepare Android SDK paths
-        run: |
-          set -euo pipefail
-          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          ANDROID_HOME="$ANDROID_SDK_ROOT"
-          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
-          fi
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
-            exit 1
-          fi
-          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
-          {
-            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-            echo "ANDROID_HOME=$ANDROID_HOME"
-            echo "SDKMANAGER=$SDKMANAGER"
-            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
-          } >> "$GITHUB_ENV"
-          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+        uses: ./.github/actions/setup-android-sdk
+        with:
+          ndk-version: "27.2.12479018"
 
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi
 
+      - name: Cache shared Cargo registry and git dependencies
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-deps-${{ github.job }}-${{ matrix.rust_target }}-${{ hashFiles('rust/Cargo.lock') }}-v2
+          restore-keys: |
+            cargo-deps-${{ github.job }}-${{ matrix.rust_target }}-
+            cargo-deps-${{ runner.os }}-
+
       - name: Install Android NDK cross-linker
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
-          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          SDK_LICENSES_ACCEPTED=false
           install_sdk_package() {
             local pkg="$1"
             local attempt
+            if [[ "${SDK_LICENSES_ACCEPTED:-false}" != true ]]; then
+              yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+              SDK_LICENSES_ACCEPTED=true
+            fi
             for attempt in 1 2 3 4 5; do
               echo "sdkmanager install $pkg: attempt $attempt/5"
               if "$SDKMANAGER" "$pkg"; then
@@ -426,10 +312,7 @@ jobs:
       - name: Cache Cargo registry and zdtd target
         uses: actions/cache@v6
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            rust/target
+          path: rust/target
           key: cargo-zdtd-${{ matrix.rust_target }}-${{ hashFiles('rust/Cargo.lock', 'rust/zdtd/Cargo.toml') }}
           restore-keys: |
             cargo-zdtd-${{ matrix.rust_target }}-
@@ -474,6 +357,7 @@ jobs:
           name: zdtd-${{ matrix.artifact_suffix }}
           path: out/artifacts/zdtd/zdtd
           retention-days: 1
+          compression-level: 1
 
   build_t2s:
     name: build T2S ${{ matrix.abi }}
@@ -514,43 +398,41 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Prepare Android SDK paths
-        run: |
-          set -euo pipefail
-          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          ANDROID_HOME="$ANDROID_SDK_ROOT"
-          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
-          fi
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
-            exit 1
-          fi
-          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
-          {
-            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-            echo "ANDROID_HOME=$ANDROID_HOME"
-            echo "SDKMANAGER=$SDKMANAGER"
-            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
-          } >> "$GITHUB_ENV"
-          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+        uses: ./.github/actions/setup-android-sdk
+        with:
+          ndk-version: "27.2.12479018"
 
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi
 
+      - name: Cache shared Cargo registry and git dependencies
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-deps-${{ github.job }}-${{ matrix.rust_target }}-${{ hashFiles('rust/Cargo.lock') }}-v2
+          restore-keys: |
+            cargo-deps-${{ github.job }}-${{ matrix.rust_target }}-
+            cargo-deps-${{ runner.os }}-
+
       - name: Install Android NDK cross-linker
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
-          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          SDK_LICENSES_ACCEPTED=false
           install_sdk_package() {
             local pkg="$1"
             local attempt
+            if [[ "${SDK_LICENSES_ACCEPTED:-false}" != true ]]; then
+              yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+              SDK_LICENSES_ACCEPTED=true
+            fi
             for attempt in 1 2 3 4 5; do
               echo "sdkmanager install $pkg: attempt $attempt/5"
               if "$SDKMANAGER" "$pkg"; then
@@ -611,10 +493,7 @@ jobs:
       - name: Cache Cargo registry and t2s target
         uses: actions/cache@v6
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            rust/target
+          path: rust/target
           key: cargo-t2s-${{ matrix.rust_target }}-${{ hashFiles('rust/Cargo.lock', 'rust/T2s/Cargo.toml') }}
           restore-keys: |
             cargo-t2s-${{ matrix.rust_target }}-
@@ -659,6 +538,7 @@ jobs:
           name: t2s-${{ matrix.artifact_suffix }}
           path: out/artifacts/t2s/t2s
           retention-days: 1
+          compression-level: 1
 
   build_d2s:
     name: build D2S ${{ matrix.abi }}
@@ -699,43 +579,41 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Prepare Android SDK paths
-        run: |
-          set -euo pipefail
-          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          ANDROID_HOME="$ANDROID_SDK_ROOT"
-          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
-          fi
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
-            exit 1
-          fi
-          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
-          {
-            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-            echo "ANDROID_HOME=$ANDROID_HOME"
-            echo "SDKMANAGER=$SDKMANAGER"
-            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
-          } >> "$GITHUB_ENV"
-          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+        uses: ./.github/actions/setup-android-sdk
+        with:
+          ndk-version: "27.2.12479018"
 
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi
 
+      - name: Cache shared Cargo registry and git dependencies
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-deps-${{ github.job }}-${{ matrix.rust_target }}-${{ hashFiles('rust/Cargo.lock') }}-v2
+          restore-keys: |
+            cargo-deps-${{ github.job }}-${{ matrix.rust_target }}-
+            cargo-deps-${{ runner.os }}-
+
       - name: Install Android NDK cross-linker
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
-          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          SDK_LICENSES_ACCEPTED=false
           install_sdk_package() {
             local pkg="$1"
             local attempt
+            if [[ "${SDK_LICENSES_ACCEPTED:-false}" != true ]]; then
+              yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+              SDK_LICENSES_ACCEPTED=true
+            fi
             for attempt in 1 2 3 4 5; do
               echo "sdkmanager install $pkg: attempt $attempt/5"
               if "$SDKMANAGER" "$pkg"; then
@@ -796,10 +674,7 @@ jobs:
       - name: Cache Cargo registry and d2s target
         uses: actions/cache@v6
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            rust/target
+          path: rust/target
           key: cargo-d2s-${{ matrix.rust_target }}-${{ hashFiles('rust/Cargo.lock', 'rust/d2s/Cargo.toml') }}
           restore-keys: |
             cargo-d2s-${{ matrix.rust_target }}-
@@ -844,22 +719,7 @@ jobs:
           name: d2s-${{ matrix.artifact_suffix }}
           path: out/artifacts/d2s/d2s
           retention-days: 1
-
-  module_core_ready:
-    name: 1 Core ready (zdtd + T2S + D2S)
-    runs-on: ubuntu-latest
-    needs:
-      - build_zdtd
-      - build_t2s
-      - build_d2s
-    if: >-
-      needs.build_zdtd.result == 'success' &&
-      needs.build_t2s.result == 'success' &&
-      needs.build_d2s.result == 'success'
-
-    steps:
-      - name: Mark core binaries ready
-        run: echo "zdtd, T2S and D2S artifacts are ready for module packaging"
+          compression-level: 1
 
   build_openvpn:
     name: build OpenVPN ${{ matrix.abi }}
@@ -900,29 +760,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Prepare Android SDK paths
-        run: |
-          set -euo pipefail
-          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          ANDROID_HOME="$ANDROID_SDK_ROOT"
-          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
-          fi
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
-            exit 1
-          fi
-          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
-          {
-            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-            echo "ANDROID_HOME=$ANDROID_HOME"
-            echo "SDKMANAGER=$SDKMANAGER"
-            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
-          } >> "$GITHUB_ENV"
-          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+        uses: ./.github/actions/setup-android-sdk
+        with:
+          ndk-version: "${{ env.NATIVE_NDK_VERSION }}"
 
       - name: Install Android NDK and build tools
         run: |
@@ -940,10 +783,14 @@ jobs:
             xz-utils
 
           NDK_VERSION="$NATIVE_NDK_VERSION"
-          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          SDK_LICENSES_ACCEPTED=false
           install_sdk_package() {
             local pkg="$1"
             local attempt
+            if [[ "${SDK_LICENSES_ACCEPTED:-false}" != true ]]; then
+              yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+              SDK_LICENSES_ACCEPTED=true
+            fi
             for attempt in 1 2 3 4 5; do
               echo "sdkmanager install $pkg: attempt $attempt/5"
               if "$SDKMANAGER" "$pkg"; then
@@ -1159,6 +1006,7 @@ jobs:
           name: openvpn-${{ matrix.artifact_suffix }}
           path: out/artifacts/openvpn/openvpn
           retention-days: 1
+          compression-level: 1
 
   build_amneziawg:
     name: build AmneziaWG ${{ matrix.abi }}
@@ -1199,7 +1047,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Go
         uses: actions/setup-go@v7
@@ -1207,36 +1055,33 @@ jobs:
           go-version: '${{ env.GO_VERSION }}'
           cache: false
 
+      - name: Cache Go modules and compiler outputs
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ env.GO_VERSION }}-${{ matrix.goarch }}-${{ github.job }}-${{ github.sha }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ env.GO_VERSION }}-${{ matrix.goarch }}-${{ github.job }}-
+
       - name: Prepare Android SDK paths
-        run: |
-          set -euo pipefail
-          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          ANDROID_HOME="$ANDROID_SDK_ROOT"
-          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
-          fi
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
-            exit 1
-          fi
-          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
-          {
-            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-            echo "ANDROID_HOME=$ANDROID_HOME"
-            echo "SDKMANAGER=$SDKMANAGER"
-            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
-          } >> "$GITHUB_ENV"
-          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+        uses: ./.github/actions/setup-android-sdk
+        with:
+          ndk-version: "${{ env.NATIVE_NDK_VERSION }}"
 
       - name: Install Android NDK for Go cgo
         run: |
           set -euo pipefail
           NDK_VERSION="$NATIVE_NDK_VERSION"
-          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          SDK_LICENSES_ACCEPTED=false
           install_sdk_package() {
             local pkg="$1"
             local attempt
+            if [[ "${SDK_LICENSES_ACCEPTED:-false}" != true ]]; then
+              yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+              SDK_LICENSES_ACCEPTED=true
+            fi
             for attempt in 1 2 3 4 5; do
               echo "sdkmanager install $pkg: attempt $attempt/5"
               if "$SDKMANAGER" "$pkg"; then
@@ -1269,70 +1114,34 @@ jobs:
             echo "CXX=$GO_CXX"
           } >> "$GITHUB_ENV"
 
-      - name: Prepare Android SDK paths
+      - name: Ensure AmneziaWG host build tools
         run: |
           set -euo pipefail
-          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          ANDROID_HOME="$ANDROID_SDK_ROOT"
-          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
-          fi
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
-            exit 1
-          fi
-          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
-          {
-            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-            echo "ANDROID_HOME=$ANDROID_HOME"
-            echo "SDKMANAGER=$SDKMANAGER"
-            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
-          } >> "$GITHUB_ENV"
-          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
-      - name: Install Android NDK and build tools
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            file \
-            git \
-            make
+          # Avoid refreshing apt indexes when the GitHub runner already has these tools.
+          missing_tools=()
+          for tool in file git make; do
+            if ! command -v "$tool" >/dev/null 2>&1; then
+              missing_tools+=("$tool")
+            fi
+          done
 
-          NDK_VERSION="$NATIVE_NDK_VERSION"
-          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-          install_sdk_package() {
-            local pkg="$1"
-            local attempt
-            for attempt in 1 2 3 4 5; do
-              echo "sdkmanager install $pkg: attempt $attempt/5"
-              if "$SDKMANAGER" "$pkg"; then
-                return 0
-              fi
-              rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.downloadIntermediates" 2>/dev/null || true
-              sleep $((attempt * 8))
-            done
-            echo "::error::Unable to install Android SDK package: $pkg"
-            return 1
-          }
-          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" ]]; then
-            install_sdk_package "ndk;$NDK_VERSION"
+          if ((${#missing_tools[@]} > 0)); then
+            echo "Installing missing host tools: ${missing_tools[*]}"
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends "${missing_tools[@]}"
+          else
+            echo "All AmneziaWG host build tools are already installed."
           fi
-          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
-          if [[ ! -d "$NDK_ROOT" ]]; then
-            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
-            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
-          fi
+
           NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
-
+          AMNEZIAWG_CC="$NDK_BIN/${{ matrix.clang_prefix }}${{ env.AMNEZIAWG_ANDROID_API_LEVEL }}-clang"
+          AMNEZIAWG_STRIP="$NDK_BIN/llvm-strip"
+          test -x "$AMNEZIAWG_CC" || { echo "::error::Android C compiler not found: $AMNEZIAWG_CC"; exit 1; }
+          test -x "$AMNEZIAWG_STRIP" || { echo "::error::Android strip not found: $AMNEZIAWG_STRIP"; exit 1; }
           {
-            echo "NDK_ROOT=$NDK_ROOT"
-            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
-            echo "ANDROID_NDK_HOME=$NDK_ROOT"
-            echo "PATH=$NDK_BIN:$PATH"
-            echo "AMNEZIAWG_CC=$NDK_BIN/${{ matrix.clang_prefix }}${{ env.AMNEZIAWG_ANDROID_API_LEVEL }}-clang"
-            echo "AMNEZIAWG_STRIP=$NDK_BIN/llvm-strip"
+            echo "AMNEZIAWG_CC=$AMNEZIAWG_CC"
+            echo "AMNEZIAWG_STRIP=$AMNEZIAWG_STRIP"
           } >> "$GITHUB_ENV"
 
       - name: Build AmneziaWG from official sources
@@ -1458,6 +1267,7 @@ jobs:
             out/artifacts/amneziawg/*.commit
             out/artifacts/amneziawg/*.dynamic.txt
           retention-days: 1
+          compression-level: 1
 
   build_wireproxy:
     name: build wireproxy ${{ matrix.abi }}
@@ -1498,7 +1308,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Go
         uses: actions/setup-go@v7
@@ -1506,36 +1316,33 @@ jobs:
           go-version: '${{ env.GO_VERSION }}'
           cache: false
 
+      - name: Cache Go modules and compiler outputs
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ env.GO_VERSION }}-${{ matrix.goarch }}-${{ github.job }}-${{ github.sha }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ env.GO_VERSION }}-${{ matrix.goarch }}-${{ github.job }}-
+
       - name: Prepare Android SDK paths
-        run: |
-          set -euo pipefail
-          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          ANDROID_HOME="$ANDROID_SDK_ROOT"
-          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
-          fi
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
-            exit 1
-          fi
-          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
-          {
-            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-            echo "ANDROID_HOME=$ANDROID_HOME"
-            echo "SDKMANAGER=$SDKMANAGER"
-            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
-          } >> "$GITHUB_ENV"
-          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+        uses: ./.github/actions/setup-android-sdk
+        with:
+          ndk-version: "${{ env.NATIVE_NDK_VERSION }}"
 
       - name: Install Android NDK for Go cgo
         run: |
           set -euo pipefail
           NDK_VERSION="$NATIVE_NDK_VERSION"
-          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          SDK_LICENSES_ACCEPTED=false
           install_sdk_package() {
             local pkg="$1"
             local attempt
+            if [[ "${SDK_LICENSES_ACCEPTED:-false}" != true ]]; then
+              yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+              SDK_LICENSES_ACCEPTED=true
+            fi
             for attempt in 1 2 3 4 5; do
               echo "sdkmanager install $pkg: attempt $attempt/5"
               if "$SDKMANAGER" "$pkg"; then
@@ -1615,6 +1422,7 @@ jobs:
             out/artifacts/wireproxy/wireproxy.commit
             out/artifacts/wireproxy/wireproxy.dynamic.txt
           retention-days: 1
+          compression-level: 1
 
   build_tun2socks:
     name: build tun2socks ${{ matrix.abi }}
@@ -1655,7 +1463,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Go
         uses: actions/setup-go@v7
@@ -1663,36 +1471,33 @@ jobs:
           go-version: '${{ env.GO_VERSION }}'
           cache: false
 
+      - name: Cache Go modules and compiler outputs
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ env.GO_VERSION }}-${{ matrix.goarch }}-${{ github.job }}-${{ github.sha }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ env.GO_VERSION }}-${{ matrix.goarch }}-${{ github.job }}-
+
       - name: Prepare Android SDK paths
-        run: |
-          set -euo pipefail
-          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          ANDROID_HOME="$ANDROID_SDK_ROOT"
-          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
-          fi
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
-            exit 1
-          fi
-          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
-          {
-            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-            echo "ANDROID_HOME=$ANDROID_HOME"
-            echo "SDKMANAGER=$SDKMANAGER"
-            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
-          } >> "$GITHUB_ENV"
-          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+        uses: ./.github/actions/setup-android-sdk
+        with:
+          ndk-version: "${{ env.NATIVE_NDK_VERSION }}"
 
       - name: Install Android NDK for Go cgo
         run: |
           set -euo pipefail
           NDK_VERSION="$NATIVE_NDK_VERSION"
-          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          SDK_LICENSES_ACCEPTED=false
           install_sdk_package() {
             local pkg="$1"
             local attempt
+            if [[ "${SDK_LICENSES_ACCEPTED:-false}" != true ]]; then
+              yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+              SDK_LICENSES_ACCEPTED=true
+            fi
             for attempt in 1 2 3 4 5; do
               echo "sdkmanager install $pkg: attempt $attempt/5"
               if "$SDKMANAGER" "$pkg"; then
@@ -1795,6 +1600,7 @@ jobs:
             out/artifacts/tun2socks/tun2socks.commit
             out/artifacts/tun2socks/tun2socks.dynamic.txt
           retention-days: 1
+          compression-level: 1
 
   build_mihomo:
     name: build mihomo ${{ matrix.abi }}
@@ -1835,7 +1641,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Go
         uses: actions/setup-go@v7
@@ -1843,36 +1649,33 @@ jobs:
           go-version: '${{ env.GO_VERSION }}'
           cache: false
 
+      - name: Cache Go modules and compiler outputs
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ env.GO_VERSION }}-${{ matrix.goarch }}-${{ github.job }}-${{ github.sha }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ env.GO_VERSION }}-${{ matrix.goarch }}-${{ github.job }}-
+
       - name: Prepare Android SDK paths
-        run: |
-          set -euo pipefail
-          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          ANDROID_HOME="$ANDROID_SDK_ROOT"
-          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
-          fi
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
-            exit 1
-          fi
-          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
-          {
-            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-            echo "ANDROID_HOME=$ANDROID_HOME"
-            echo "SDKMANAGER=$SDKMANAGER"
-            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
-          } >> "$GITHUB_ENV"
-          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+        uses: ./.github/actions/setup-android-sdk
+        with:
+          ndk-version: "${{ env.NATIVE_NDK_VERSION }}"
 
       - name: Install Android NDK for Go cgo
         run: |
           set -euo pipefail
           NDK_VERSION="$NATIVE_NDK_VERSION"
-          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          SDK_LICENSES_ACCEPTED=false
           install_sdk_package() {
             local pkg="$1"
             local attempt
+            if [[ "${SDK_LICENSES_ACCEPTED:-false}" != true ]]; then
+              yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+              SDK_LICENSES_ACCEPTED=true
+            fi
             for attempt in 1 2 3 4 5; do
               echo "sdkmanager install $pkg: attempt $attempt/5"
               if "$SDKMANAGER" "$pkg"; then
@@ -1968,6 +1771,7 @@ jobs:
             out/artifacts/mihomo/mihomo.commit
             out/artifacts/mihomo/mihomo.dynamic.txt
           retention-days: 1
+          compression-level: 1
 
   build_singbox:
     name: build sing-box ${{ matrix.abi }}
@@ -2008,7 +1812,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Go
         uses: actions/setup-go@v7
@@ -2016,36 +1820,33 @@ jobs:
           go-version: '${{ env.GO_VERSION }}'
           cache: false
 
+      - name: Cache Go modules and compiler outputs
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ env.GO_VERSION }}-${{ matrix.goarch }}-${{ github.job }}-${{ github.sha }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ env.GO_VERSION }}-${{ matrix.goarch }}-${{ github.job }}-
+
       - name: Prepare Android SDK paths
-        run: |
-          set -euo pipefail
-          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          ANDROID_HOME="$ANDROID_SDK_ROOT"
-          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
-          fi
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
-            exit 1
-          fi
-          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
-          {
-            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-            echo "ANDROID_HOME=$ANDROID_HOME"
-            echo "SDKMANAGER=$SDKMANAGER"
-            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
-          } >> "$GITHUB_ENV"
-          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+        uses: ./.github/actions/setup-android-sdk
+        with:
+          ndk-version: "${{ env.NATIVE_NDK_VERSION }}"
 
       - name: Install Android NDK for Go cgo
         run: |
           set -euo pipefail
           NDK_VERSION="$NATIVE_NDK_VERSION"
-          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          SDK_LICENSES_ACCEPTED=false
           install_sdk_package() {
             local pkg="$1"
             local attempt
+            if [[ "${SDK_LICENSES_ACCEPTED:-false}" != true ]]; then
+              yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+              SDK_LICENSES_ACCEPTED=true
+            fi
             for attempt in 1 2 3 4 5; do
               echo "sdkmanager install $pkg: attempt $attempt/5"
               if "$SDKMANAGER" "$pkg"; then
@@ -2159,7 +1960,7 @@ jobs:
             out/artifacts/sing-box/sing-box.commit
             out/artifacts/sing-box/sing-box.dynamic.txt
           retention-days: 1
-
+          compression-level: 1
 
   build_singbox_lx_optional:
     name: build optional sing-box-lx ${{ matrix.abi }}
@@ -2188,7 +1989,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Go
         uses: actions/setup-go@v7
@@ -2196,28 +1997,20 @@ jobs:
           go-version: '1.26.10'
           cache: false
 
+      - name: Cache Go modules and compiler outputs
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-1.26.10-${{ matrix.goarch }}-${{ github.job }}-${{ github.sha }}
+          restore-keys: |
+            go-${{ runner.os }}-1.26.10-${{ matrix.goarch }}-${{ github.job }}-
+
       - name: Prepare Android SDK paths for sing-box-lx cgo
-        if: matrix.cgo_enabled == '1'
-        run: |
-          set -euo pipefail
-          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          ANDROID_HOME="$ANDROID_SDK_ROOT"
-          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
-          fi
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
-            exit 1
-          fi
-          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
-          {
-            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-            echo "ANDROID_HOME=$ANDROID_HOME"
-            echo "SDKMANAGER=$SDKMANAGER"
-            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
-          } >> "$GITHUB_ENV"
-          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+        uses: ./.github/actions/setup-android-sdk
+        with:
+          ndk-version: "${{ env.NATIVE_NDK_VERSION }}"
 
       - name: Install Android NDK for sing-box-lx cgo
         if: matrix.cgo_enabled == '1'
@@ -2227,6 +2020,10 @@ jobs:
           install_sdk_package() {
             local pkg="$1"
             local attempt
+            if [[ "${SDK_LICENSES_ACCEPTED:-false}" != true ]]; then
+              yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+              SDK_LICENSES_ACCEPTED=true
+            fi
             for attempt in 1 2 3 4 5; do
               echo "sdkmanager install $pkg: attempt $attempt/5"
               if "$SDKMANAGER" "$pkg"; then
@@ -2357,7 +2154,7 @@ jobs:
             out/artifacts/sing-box-lx/sing-box-lx.commit
             out/artifacts/sing-box-lx/sing-box-lx.dynamic.txt
           retention-days: 1
-
+          compression-level: 1
 
   package_singbox_lx_asset:
     name: package sing_box_lx.zip
@@ -2367,37 +2164,31 @@ jobs:
     if: needs.build_singbox_lx_optional.result == 'success'
 
     steps:
-      - name: Download sing-box-lx arm64
+      - name: Download sing-box-lx for both ABIs
         uses: actions/download-artifact@v8
         with:
-          name: sing-box-lx-arm64
-          path: out/sing-box-lx/arm64-v8a
-
-      - name: Download sing-box-lx arm32
-        uses: actions/download-artifact@v8
-        with:
-          name: sing-box-lx-arm32
-          path: out/sing-box-lx/armeabi-v7a
+          pattern: 'sing-box-lx-arm*'
+          path: out/sing-box-lx
 
       - name: Build sing_box_lx.zip
         run: |
           set -euo pipefail
           ROOT="out/technical/sing_box_lx"
           mkdir -p "$ROOT/arm64-v8a" "$ROOT/armeabi-v7a"
-          cp -f out/sing-box-lx/arm64-v8a/sing-box-lx "$ROOT/arm64-v8a/sing-box-lx"
-          cp -f out/sing-box-lx/armeabi-v7a/sing-box-lx "$ROOT/armeabi-v7a/sing-box-lx"
+          cp -f out/sing-box-lx/sing-box-lx-arm64/sing-box-lx "$ROOT/arm64-v8a/sing-box-lx"
+          cp -f out/sing-box-lx/sing-box-lx-arm32/sing-box-lx "$ROOT/armeabi-v7a/sing-box-lx"
           chmod 755 "$ROOT/arm64-v8a/sing-box-lx" "$ROOT/armeabi-v7a/sing-box-lx"
 
-          ARM64_COMMIT="$(tr -d '[:space:]' < out/sing-box-lx/arm64-v8a/sing-box-lx.commit)"
-          ARM32_COMMIT="$(tr -d '[:space:]' < out/sing-box-lx/armeabi-v7a/sing-box-lx.commit)"
+          ARM64_COMMIT="$(tr -d '[:space:]' < out/sing-box-lx/sing-box-lx-arm64/sing-box-lx.commit)"
+          ARM32_COMMIT="$(tr -d '[:space:]' < out/sing-box-lx/sing-box-lx-arm32/sing-box-lx.commit)"
           [[ -n "$ARM64_COMMIT" && "$ARM64_COMMIT" == "$ARM32_COMMIT" ]] || {
             echo "::error::sing-box-lx ABI builds came from different commits"
             exit 1
           }
           LX_VERSION="${SING_BOX_LX_REF#v}"
-          BUILD_TAGS="$(sed -n 's/^tags=//p' out/sing-box-lx/arm64-v8a/sing-box-lx.version | head -1)"
+          BUILD_TAGS="$(sed -n 's/^tags=//p' out/sing-box-lx/sing-box-lx-arm64/sing-box-lx.version | head -1)"
           [[ -n "$BUILD_TAGS" ]] || { echo "::error::sing-box-lx build tags metadata missing"; exit 1; }
-          grep -Fx "tags=$BUILD_TAGS" out/sing-box-lx/armeabi-v7a/sing-box-lx.version >/dev/null || {
+          grep -Fx "tags=$BUILD_TAGS" out/sing-box-lx/sing-box-lx-arm32/sing-box-lx.version >/dev/null || {
             echo "::error::sing-box-lx ABI build tags differ"
             exit 1
           }
@@ -2437,7 +2228,7 @@ jobs:
           assert set(data['files']) == {'arm64-v8a/sing-box-lx', 'armeabi-v7a/sing-box-lx'}
           PY_MANIFEST
 
-          (cd "$ROOT" && zip -9 -r ../sing_box_lx.zip manifest.json arm64-v8a/sing-box-lx armeabi-v7a/sing-box-lx)
+          (cd "$ROOT" && zip -1 -r ../sing_box_lx.zip manifest.json arm64-v8a/sing-box-lx armeabi-v7a/sing-box-lx)
           unzip -t out/technical/sing_box_lx.zip
           unzip -Z1 out/technical/sing_box_lx.zip | grep -Fx 'manifest.json'
           unzip -Z1 out/technical/sing_box_lx.zip | grep -Fx 'arm64-v8a/sing-box-lx'
@@ -2450,6 +2241,7 @@ jobs:
           name: sing-box-lx-technical-asset
           path: out/technical/sing_box_lx.zip
           retention-days: 1
+          compression-level: 0
 
   build_hysteria2:
     name: build hysteria2 ${{ matrix.abi }}
@@ -2474,7 +2266,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Go
         uses: actions/setup-go@v7
@@ -2482,27 +2274,38 @@ jobs:
           go-version: '${{ env.GO_VERSION }}'
           cache: false
 
+      - name: Cache Go modules and compiler outputs
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ env.GO_VERSION }}-${{ matrix.goarch }}-${{ github.job }}-${{ github.sha }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ env.GO_VERSION }}-${{ matrix.goarch }}-${{ github.job }}-
+
       - name: Set up uv
         uses: astral-sh/setup-uv@v10.2.0
 
-      - name: Prepare Android NDK
+      - name: Prepare Android SDK paths and NDK
+        uses: ./.github/actions/setup-android-sdk
+        with:
+          ndk-version: "${{ env.NATIVE_NDK_VERSION }}"
+          install-ndk: 'true'
+
+      - name: Configure Android NDK
         run: |
           set -euo pipefail
-          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          ANDROID_HOME="$ANDROID_SDK_ROOT"
-          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
-          fi
-          test -x "$SDKMANAGER" || { echo "::error::sdkmanager not found"; exit 1; }
-          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
-          NDK_VERSION="$NATIVE_NDK_VERSION"
-          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" ]]; then
-            "$SDKMANAGER" "ndk;$NDK_VERSION"
-          fi
-          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
-          echo "ANDROID_NDK_HOME=$NDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_NDK_ROOT=$NDK_ROOT" >> "$GITHUB_ENV"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NATIVE_NDK_VERSION"
+          test -x "$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" || {
+            echo "::error::Android NDK is incomplete: $NDK_ROOT"
+            exit 1
+          }
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+          } >> "$GITHUB_ENV"
 
       - name: Build Hysteria from official source
         run: |
@@ -2561,6 +2364,7 @@ jobs:
             out/artifacts/hysteria2/hysteria2.commit
             out/artifacts/hysteria2/hysteria2.dynamic.txt
           retention-days: 1
+          compression-level: 1
 
   build_byedpi:
     name: build byedpi ${{ matrix.abi }}
@@ -2601,29 +2405,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Prepare Android SDK paths
-        run: |
-          set -euo pipefail
-          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          ANDROID_HOME="$ANDROID_SDK_ROOT"
-          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
-          fi
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
-            exit 1
-          fi
-          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
-          {
-            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-            echo "ANDROID_HOME=$ANDROID_HOME"
-            echo "SDKMANAGER=$SDKMANAGER"
-            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
-          } >> "$GITHUB_ENV"
-          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+        uses: ./.github/actions/setup-android-sdk
+        with:
+          ndk-version: "${{ env.NATIVE_NDK_VERSION }}"
 
       - name: Install Android NDK and build tools
         run: |
@@ -2635,10 +2422,14 @@ jobs:
             make
 
           NDK_VERSION="$NATIVE_NDK_VERSION"
-          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          SDK_LICENSES_ACCEPTED=false
           install_sdk_package() {
             local pkg="$1"
             local attempt
+            if [[ "${SDK_LICENSES_ACCEPTED:-false}" != true ]]; then
+              yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+              SDK_LICENSES_ACCEPTED=true
+            fi
             for attempt in 1 2 3 4 5; do
               echo "sdkmanager install $pkg: attempt $attempt/5"
               if "$SDKMANAGER" "$pkg"; then
@@ -2741,6 +2532,7 @@ jobs:
             out/artifacts/byedpi/byedpi.commit
             out/artifacts/byedpi/byedpi.dynamic.txt
           retention-days: 1
+          compression-level: 1
 
   build_dnscrypt:
     name: build dnscrypt ${{ matrix.abi }}
@@ -2781,7 +2573,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Go
         uses: actions/setup-go@v7
@@ -2789,36 +2581,33 @@ jobs:
           go-version: '${{ env.GO_VERSION }}'
           cache: false
 
+      - name: Cache Go modules and compiler outputs
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ env.GO_VERSION }}-${{ matrix.goarch }}-${{ github.job }}-${{ github.sha }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ env.GO_VERSION }}-${{ matrix.goarch }}-${{ github.job }}-
+
       - name: Prepare Android SDK paths
-        run: |
-          set -euo pipefail
-          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          ANDROID_HOME="$ANDROID_SDK_ROOT"
-          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
-          fi
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
-            exit 1
-          fi
-          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
-          {
-            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-            echo "ANDROID_HOME=$ANDROID_HOME"
-            echo "SDKMANAGER=$SDKMANAGER"
-            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
-          } >> "$GITHUB_ENV"
-          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+        uses: ./.github/actions/setup-android-sdk
+        with:
+          ndk-version: "${{ env.NATIVE_NDK_VERSION }}"
 
       - name: Install Android NDK for Go cgo
         run: |
           set -euo pipefail
           NDK_VERSION="$NATIVE_NDK_VERSION"
-          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          SDK_LICENSES_ACCEPTED=false
           install_sdk_package() {
             local pkg="$1"
             local attempt
+            if [[ "${SDK_LICENSES_ACCEPTED:-false}" != true ]]; then
+              yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+              SDK_LICENSES_ACCEPTED=true
+            fi
             for attempt in 1 2 3 4 5; do
               echo "sdkmanager install $pkg: attempt $attempt/5"
               if "$SDKMANAGER" "$pkg"; then
@@ -2930,6 +2719,7 @@ jobs:
             out/artifacts/dnscrypt/dnscrypt.commit
             out/artifacts/dnscrypt/dnscrypt.dynamic.txt
           retention-days: 1
+          compression-level: 1
 
   build_mieru:
     name: build mieru ${{ matrix.abi }}
@@ -2970,7 +2760,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Go
         uses: actions/setup-go@v7
@@ -2978,36 +2768,33 @@ jobs:
           go-version: '${{ env.GO_VERSION }}'
           cache: false
 
+      - name: Cache Go modules and compiler outputs
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ env.GO_VERSION }}-${{ matrix.goarch }}-${{ github.job }}-${{ github.sha }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ env.GO_VERSION }}-${{ matrix.goarch }}-${{ github.job }}-
+
       - name: Prepare Android SDK paths
-        run: |
-          set -euo pipefail
-          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          ANDROID_HOME="$ANDROID_SDK_ROOT"
-          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
-          fi
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
-            exit 1
-          fi
-          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
-          {
-            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-            echo "ANDROID_HOME=$ANDROID_HOME"
-            echo "SDKMANAGER=$SDKMANAGER"
-            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
-          } >> "$GITHUB_ENV"
-          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+        uses: ./.github/actions/setup-android-sdk
+        with:
+          ndk-version: "${{ env.NATIVE_NDK_VERSION }}"
 
       - name: Install Android NDK for Go cgo
         run: |
           set -euo pipefail
           NDK_VERSION="$NATIVE_NDK_VERSION"
-          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          SDK_LICENSES_ACCEPTED=false
           install_sdk_package() {
             local pkg="$1"
             local attempt
+            if [[ "${SDK_LICENSES_ACCEPTED:-false}" != true ]]; then
+              yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+              SDK_LICENSES_ACCEPTED=true
+            fi
             for attempt in 1 2 3 4 5; do
               echo "sdkmanager install $pkg: attempt $attempt/5"
               if "$SDKMANAGER" "$pkg"; then
@@ -3114,6 +2901,7 @@ jobs:
             out/artifacts/mieru/mieru.commit
             out/artifacts/mieru/mieru.dynamic.txt
           retention-days: 1
+          compression-level: 1
 
   build_operaproxy:
     name: build opera-proxy ${{ matrix.abi }}
@@ -3154,7 +2942,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Go
         uses: actions/setup-go@v7
@@ -3162,36 +2950,33 @@ jobs:
           go-version: '${{ env.GO_VERSION }}'
           cache: false
 
+      - name: Cache Go modules and compiler outputs
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ env.GO_VERSION }}-${{ matrix.goarch }}-${{ github.job }}-${{ github.sha }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ env.GO_VERSION }}-${{ matrix.goarch }}-${{ github.job }}-
+
       - name: Prepare Android SDK paths
-        run: |
-          set -euo pipefail
-          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          ANDROID_HOME="$ANDROID_SDK_ROOT"
-          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
-          fi
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
-            exit 1
-          fi
-          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
-          {
-            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-            echo "ANDROID_HOME=$ANDROID_HOME"
-            echo "SDKMANAGER=$SDKMANAGER"
-            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
-          } >> "$GITHUB_ENV"
-          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+        uses: ./.github/actions/setup-android-sdk
+        with:
+          ndk-version: "${{ env.NATIVE_NDK_VERSION }}"
 
       - name: Install Android NDK for Go cgo
         run: |
           set -euo pipefail
           NDK_VERSION="$NATIVE_NDK_VERSION"
-          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          SDK_LICENSES_ACCEPTED=false
           install_sdk_package() {
             local pkg="$1"
             local attempt
+            if [[ "${SDK_LICENSES_ACCEPTED:-false}" != true ]]; then
+              yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+              SDK_LICENSES_ACCEPTED=true
+            fi
             for attempt in 1 2 3 4 5; do
               echo "sdkmanager install $pkg: attempt $attempt/5"
               if "$SDKMANAGER" "$pkg"; then
@@ -3284,6 +3069,7 @@ jobs:
             out/artifacts/opera-proxy/opera-proxy.commit
             out/artifacts/opera-proxy/opera-proxy.dynamic.txt
           retention-days: 1
+          compression-level: 1
 
   build_dpitunnel:
     name: build DPITunnel ${{ matrix.abi }}
@@ -3324,24 +3110,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Prepare Android SDK paths
-        run: |
-          set -euo pipefail
-          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          ANDROID_HOME="$ANDROID_SDK_ROOT"
-          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
-          fi
-          test -x "$SDKMANAGER" || { echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"; exit 1; }
-          {
-            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-            echo "ANDROID_HOME=$ANDROID_HOME"
-            echo "SDKMANAGER=$SDKMANAGER"
-          } >> "$GITHUB_ENV"
-          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+        uses: ./.github/actions/setup-android-sdk
+        with:
+          ndk-version: "${{ env.NATIVE_NDK_VERSION }}"
 
       - name: Install Android NDK and build tools
         run: |
@@ -3362,6 +3136,10 @@ jobs:
           install_sdk_package() {
             local pkg="$1"
             local attempt
+            if [[ "${SDK_LICENSES_ACCEPTED:-false}" != true ]]; then
+              yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+              SDK_LICENSES_ACCEPTED=true
+            fi
             for attempt in 1 2 3 4 5; do
               echo "sdkmanager install $pkg: attempt $attempt/5"
               if "$SDKMANAGER" "$pkg"; then
@@ -3522,6 +3300,7 @@ jobs:
             out/artifacts/dpitunnel/dpitunnel-cli.commit
             out/artifacts/dpitunnel/dpitunnel-cli.dynamic.txt
           retention-days: 1
+          compression-level: 1
 
   build_nfqws:
     name: build nfqws ${{ matrix.abi }}
@@ -3562,29 +3341,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Prepare Android SDK paths
-        run: |
-          set -euo pipefail
-          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          ANDROID_HOME="$ANDROID_SDK_ROOT"
-          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
-          fi
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
-            exit 1
-          fi
-          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
-          {
-            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-            echo "ANDROID_HOME=$ANDROID_HOME"
-            echo "SDKMANAGER=$SDKMANAGER"
-            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
-          } >> "$GITHUB_ENV"
-          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+        uses: ./.github/actions/setup-android-sdk
+        with:
+          ndk-version: "${{ env.NATIVE_NDK_VERSION }}"
 
       - name: Install Android NDK and build tools
         run: |
@@ -3606,10 +3368,14 @@ jobs:
             g++-multilib
 
           NDK_VERSION="$NATIVE_NDK_VERSION"
-          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          SDK_LICENSES_ACCEPTED=false
           install_sdk_package() {
             local pkg="$1"
             local attempt
+            if [[ "${SDK_LICENSES_ACCEPTED:-false}" != true ]]; then
+              yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+              SDK_LICENSES_ACCEPTED=true
+            fi
             for attempt in 1 2 3 4 5; do
               echo "sdkmanager install $pkg: attempt $attempt/5"
               if "$SDKMANAGER" "$pkg"; then
@@ -3784,6 +3550,7 @@ jobs:
             out/artifacts/nfqws/zapret.commit
             out/artifacts/nfqws/nfqws.dynamic.txt
           retention-days: 1
+          compression-level: 1
 
   build_nfqws2:
     name: build nfqws2 ${{ matrix.abi }}
@@ -3824,29 +3591,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Prepare Android SDK paths
-        run: |
-          set -euo pipefail
-          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          ANDROID_HOME="$ANDROID_SDK_ROOT"
-          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
-          fi
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
-            exit 1
-          fi
-          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
-          {
-            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-            echo "ANDROID_HOME=$ANDROID_HOME"
-            echo "SDKMANAGER=$SDKMANAGER"
-            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
-          } >> "$GITHUB_ENV"
-          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+        uses: ./.github/actions/setup-android-sdk
+        with:
+          ndk-version: "${{ env.NATIVE_NDK_VERSION }}"
 
       - name: Install Android NDK and build tools
         run: |
@@ -3872,10 +3622,14 @@ jobs:
             g++-multilib
 
           NDK_VERSION="$NATIVE_NDK_VERSION"
-          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          SDK_LICENSES_ACCEPTED=false
           install_sdk_package() {
             local pkg="$1"
             local attempt
+            if [[ "${SDK_LICENSES_ACCEPTED:-false}" != true ]]; then
+              yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+              SDK_LICENSES_ACCEPTED=true
+            fi
             for attempt in 1 2 3 4 5; do
               echo "sdkmanager install $pkg: attempt $attempt/5"
               if "$SDKMANAGER" "$pkg"; then
@@ -4099,6 +3853,7 @@ jobs:
             out/artifacts/nfqws2/nfqws2.dynamic.txt
             out/artifacts/nfqws2/lua
           retention-days: 1
+          compression-level: 1
 
   build_torproxy:
     name: build Tor ${{ matrix.abi }}
@@ -4139,29 +3894,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Prepare Android SDK paths
-        run: |
-          set -euo pipefail
-          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          ANDROID_HOME="$ANDROID_SDK_ROOT"
-          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
-          fi
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
-            exit 1
-          fi
-          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
-          {
-            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-            echo "ANDROID_HOME=$ANDROID_HOME"
-            echo "SDKMANAGER=$SDKMANAGER"
-            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
-          } >> "$GITHUB_ENV"
-          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+        uses: ./.github/actions/setup-android-sdk
+        with:
+          ndk-version: "${{ env.NATIVE_NDK_VERSION }}"
 
       - name: Install Android NDK and build tools
         run: |
@@ -4183,10 +3921,14 @@ jobs:
             python3
 
           NDK_VERSION="$NATIVE_NDK_VERSION"
-          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          SDK_LICENSES_ACCEPTED=false
           install_sdk_package() {
             local pkg="$1"
             local attempt
+            if [[ "${SDK_LICENSES_ACCEPTED:-false}" != true ]]; then
+              yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+              SDK_LICENSES_ACCEPTED=true
+            fi
             for attempt in 1 2 3 4 5; do
               echo "sdkmanager install $pkg: attempt $attempt/5"
               if "$SDKMANAGER" "$pkg"; then
@@ -4382,6 +4124,7 @@ jobs:
             out/artifacts/torproxy/torproxy.commit
             out/artifacts/torproxy/torproxy.dynamic.txt
           retention-days: 1
+          compression-level: 1
 
   build_lyrebird:
     name: build lyrebird ${{ matrix.abi }}
@@ -4422,7 +4165,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Go
         uses: actions/setup-go@v7
@@ -4430,36 +4173,33 @@ jobs:
           go-version: '${{ env.GO_VERSION }}'
           cache: false
 
+      - name: Cache Go modules and compiler outputs
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ env.GO_VERSION }}-${{ matrix.goarch }}-${{ github.job }}-${{ github.sha }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ env.GO_VERSION }}-${{ matrix.goarch }}-${{ github.job }}-
+
       - name: Prepare Android SDK paths
-        run: |
-          set -euo pipefail
-          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          ANDROID_HOME="$ANDROID_SDK_ROOT"
-          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
-          fi
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
-            exit 1
-          fi
-          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
-          {
-            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-            echo "ANDROID_HOME=$ANDROID_HOME"
-            echo "SDKMANAGER=$SDKMANAGER"
-            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
-          } >> "$GITHUB_ENV"
-          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+        uses: ./.github/actions/setup-android-sdk
+        with:
+          ndk-version: "${{ env.NATIVE_NDK_VERSION }}"
 
       - name: Install Android NDK for Go cgo
         run: |
           set -euo pipefail
           NDK_VERSION="$NATIVE_NDK_VERSION"
-          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          SDK_LICENSES_ACCEPTED=false
           install_sdk_package() {
             local pkg="$1"
             local attempt
+            if [[ "${SDK_LICENSES_ACCEPTED:-false}" != true ]]; then
+              yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+              SDK_LICENSES_ACCEPTED=true
+            fi
             for attempt in 1 2 3 4 5; do
               echo "sdkmanager install $pkg: attempt $attempt/5"
               if "$SDKMANAGER" "$pkg"; then
@@ -4558,48 +4298,7 @@ jobs:
             out/artifacts/lyrebird/lyrebird.commit
             out/artifacts/lyrebird/lyrebird.dynamic.txt
           retention-days: 1
-
-  module_binaries_ready:
-    name: Module binaries ready (OpenVPN + AmneziaWG + wireproxy + tun2socks + mihomo + sing-box + hysteria2 + byedpi + dnscrypt + mieru + opera-proxy + DPITunnel + Tor + lyrebird + nfqws + nfqws2)
-    runs-on: ubuntu-latest
-    needs:
-      - build_openvpn
-      - build_amneziawg
-      - build_wireproxy
-      - build_tun2socks
-      - build_mihomo
-      - build_singbox
-      - build_hysteria2
-      - build_byedpi
-      - build_dnscrypt
-      - build_mieru
-      - build_operaproxy
-      - build_dpitunnel
-      - build_torproxy
-      - build_lyrebird
-      - build_nfqws
-      - build_nfqws2
-    if: >-
-      needs.build_openvpn.result == 'success' &&
-      needs.build_amneziawg.result == 'success' &&
-      needs.build_wireproxy.result == 'success' &&
-      needs.build_tun2socks.result == 'success' &&
-      needs.build_mihomo.result == 'success' &&
-      needs.build_singbox.result == 'success' &&
-      needs.build_hysteria2.result == 'success' &&
-      needs.build_byedpi.result == 'success' &&
-      needs.build_dnscrypt.result == 'success' &&
-      needs.build_mieru.result == 'success' &&
-      needs.build_operaproxy.result == 'success' &&
-      needs.build_dpitunnel.result == 'success' &&
-      needs.build_torproxy.result == 'success' &&
-      needs.build_lyrebird.result == 'success' &&
-      needs.build_nfqws.result == 'success' &&
-      needs.build_nfqws2.result == 'success'
-
-    steps:
-      - name: Mark module binaries ready
-        run: echo "External module binary artifacts are ready for module packaging"
+          compression-level: 1
 
   build_zygisk:
     name: build Zygisk module ${{ matrix.abi }}
@@ -4640,38 +4339,25 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Prepare Android SDK paths
-        run: |
-          set -euo pipefail
-          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          ANDROID_HOME="$ANDROID_SDK_ROOT"
-          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
-          fi
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
-            exit 1
-          fi
-          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
-          {
-            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-            echo "ANDROID_HOME=$ANDROID_HOME"
-            echo "SDKMANAGER=$SDKMANAGER"
-            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
-          } >> "$GITHUB_ENV"
-          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+        uses: ./.github/actions/setup-android-sdk
+        with:
+          ndk-version: "${{ env.NATIVE_NDK_VERSION }}"
 
       - name: Install Android NDK
         run: |
           set -euo pipefail
           NDK_VERSION="$NATIVE_NDK_VERSION"
-          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          SDK_LICENSES_ACCEPTED=false
           install_sdk_package() {
             local pkg="$1"
             local attempt
+            if [[ "${SDK_LICENSES_ACCEPTED:-false}" != true ]]; then
+              yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+              SDK_LICENSES_ACCEPTED=true
+            fi
             for attempt in 1 2 3 4 5; do
               echo "sdkmanager install $pkg: attempt $attempt/5"
               if "$SDKMANAGER" "$pkg"; then
@@ -4720,35 +4406,41 @@ jobs:
           name: zygisk-${{ matrix.artifact_suffix }}
           path: out/zygisk/${{ matrix.abi }}.so
           retention-days: 1
-
-  module_zygisk_ready:
-    name: 3 Module Zygisk ready
-    runs-on: ubuntu-latest
-    needs:
-      - build_zygisk
-    if: needs.build_zygisk.result == 'success'
-
-    steps:
-      - name: Mark Zygisk binary ready
-        run: echo "Zygisk artifact is ready for module packaging"
+          compression-level: 1
 
   pack_module:
     name: 5 Pack module ZIP
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      statuses: write
     needs:
-      - module_core_ready
-      - module_binaries_ready
-      - module_zygisk_ready
-    if: >-
-      needs.module_core_ready.result == 'success' &&
-      needs.module_binaries_ready.result == 'success' &&
-      needs.module_zygisk_ready.result == 'success'
+      - build_zdtd
+      - build_t2s
+      - build_d2s
+      - build_openvpn
+      - build_amneziawg
+      - build_wireproxy
+      - build_tun2socks
+      - build_mihomo
+      - build_singbox
+      - build_hysteria2
+      - build_byedpi
+      - build_dnscrypt
+      - build_mieru
+      - build_operaproxy
+      - build_dpitunnel
+      - build_torproxy
+      - build_lyrebird
+      - build_nfqws
+      - build_nfqws2
+      - build_zygisk
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Publish archive stage
         continue-on-error: true
@@ -4807,206 +4499,31 @@ jobs:
 
           echo "[ZDT-D] Build identity: ${BUILD_CHANNEL} v${VERSION_NAME} #${GITHUB_RUN_NUMBER} (versionCode=${VERSION_CODE})"
 
-      - name: Download zdtd arm64
+      - name: Download all module binaries
         uses: actions/download-artifact@v8
         with:
-          name: zdtd-arm64
-          path: out/artifacts/zdtd/arm64
-      - name: Download t2s arm64
-        uses: actions/download-artifact@v8
-        with:
-          name: t2s-arm64
-          path: out/artifacts/t2s/arm64
-      - name: Download d2s arm64
-        uses: actions/download-artifact@v8
-        with:
-          name: d2s-arm64
-          path: out/artifacts/d2s/arm64
-      - name: Download zygisk arm64
-        uses: actions/download-artifact@v8
-        with:
-          name: zygisk-arm64
-          path: out/artifacts/zygisk/arm64
-      - name: Download openvpn arm64
-        uses: actions/download-artifact@v8
-        with:
-          name: openvpn-arm64
-          path: out/artifacts/openvpn/arm64
-      - name: Download amneziawg arm64
-        uses: actions/download-artifact@v8
-        with:
-          name: amneziawg-arm64
-          path: out/artifacts/amneziawg/arm64
-      - name: Download wireproxy arm64
-        uses: actions/download-artifact@v8
-        with:
-          name: wireproxy-arm64
-          path: out/artifacts/wireproxy/arm64
-      - name: Download tun2socks arm64
-        uses: actions/download-artifact@v8
-        with:
-          name: tun2socks-arm64
-          path: out/artifacts/tun2socks/arm64
-      - name: Download mihomo arm64
-        uses: actions/download-artifact@v8
-        with:
-          name: mihomo-arm64
-          path: out/artifacts/mihomo/arm64
-      - name: Download sing-box arm64
-        uses: actions/download-artifact@v8
-        with:
-          name: sing-box-arm64
-          path: out/artifacts/sing-box/arm64
-      - name: Download hysteria2 arm64
-        uses: actions/download-artifact@v8
-        with:
-          name: hysteria2-arm64
-          path: out/artifacts/hysteria2/arm64
-      - name: Download byedpi arm64
-        uses: actions/download-artifact@v8
-        with:
-          name: byedpi-arm64
-          path: out/artifacts/byedpi/arm64
-      - name: Download dnscrypt arm64
-        uses: actions/download-artifact@v8
-        with:
-          name: dnscrypt-arm64
-          path: out/artifacts/dnscrypt/arm64
-      - name: Download mieru arm64
-        uses: actions/download-artifact@v8
-        with:
-          name: mieru-arm64
-          path: out/artifacts/mieru/arm64
-      - name: Download opera-proxy arm64
-        uses: actions/download-artifact@v8
-        with:
-          name: opera-proxy-arm64
-          path: out/artifacts/opera-proxy/arm64
-      - name: Download dpitunnel arm64
-        uses: actions/download-artifact@v8
-        with:
-          name: dpitunnel-arm64
-          path: out/artifacts/dpitunnel/arm64
-      - name: Download torproxy arm64
-        uses: actions/download-artifact@v8
-        with:
-          name: torproxy-arm64
-          path: out/artifacts/torproxy/arm64
-      - name: Download lyrebird arm64
-        uses: actions/download-artifact@v8
-        with:
-          name: lyrebird-arm64
-          path: out/artifacts/lyrebird/arm64
-      - name: Download nfqws arm64
-        uses: actions/download-artifact@v8
-        with:
-          name: nfqws-arm64
-          path: out/artifacts/nfqws/arm64
-      - name: Download nfqws2 arm64
-        uses: actions/download-artifact@v8
-        with:
-          name: nfqws2-arm64
-          path: out/artifacts/nfqws2/arm64
-      - name: Download zdtd arm32
-        uses: actions/download-artifact@v8
-        with:
-          name: zdtd-arm32
-          path: out/artifacts/zdtd/arm32
-      - name: Download t2s arm32
-        uses: actions/download-artifact@v8
-        with:
-          name: t2s-arm32
-          path: out/artifacts/t2s/arm32
-      - name: Download d2s arm32
-        uses: actions/download-artifact@v8
-        with:
-          name: d2s-arm32
-          path: out/artifacts/d2s/arm32
-      - name: Download zygisk arm32
-        uses: actions/download-artifact@v8
-        with:
-          name: zygisk-arm32
-          path: out/artifacts/zygisk/arm32
-      - name: Download openvpn arm32
-        uses: actions/download-artifact@v8
-        with:
-          name: openvpn-arm32
-          path: out/artifacts/openvpn/arm32
-      - name: Download amneziawg arm32
-        uses: actions/download-artifact@v8
-        with:
-          name: amneziawg-arm32
-          path: out/artifacts/amneziawg/arm32
-      - name: Download wireproxy arm32
-        uses: actions/download-artifact@v8
-        with:
-          name: wireproxy-arm32
-          path: out/artifacts/wireproxy/arm32
-      - name: Download tun2socks arm32
-        uses: actions/download-artifact@v8
-        with:
-          name: tun2socks-arm32
-          path: out/artifacts/tun2socks/arm32
-      - name: Download mihomo arm32
-        uses: actions/download-artifact@v8
-        with:
-          name: mihomo-arm32
-          path: out/artifacts/mihomo/arm32
-      - name: Download sing-box arm32
-        uses: actions/download-artifact@v8
-        with:
-          name: sing-box-arm32
-          path: out/artifacts/sing-box/arm32
-      - name: Download hysteria2 arm32
-        uses: actions/download-artifact@v8
-        with:
-          name: hysteria2-arm32
-          path: out/artifacts/hysteria2/arm32
-      - name: Download byedpi arm32
-        uses: actions/download-artifact@v8
-        with:
-          name: byedpi-arm32
-          path: out/artifacts/byedpi/arm32
-      - name: Download dnscrypt arm32
-        uses: actions/download-artifact@v8
-        with:
-          name: dnscrypt-arm32
-          path: out/artifacts/dnscrypt/arm32
-      - name: Download mieru arm32
-        uses: actions/download-artifact@v8
-        with:
-          name: mieru-arm32
-          path: out/artifacts/mieru/arm32
-      - name: Download opera-proxy arm32
-        uses: actions/download-artifact@v8
-        with:
-          name: opera-proxy-arm32
-          path: out/artifacts/opera-proxy/arm32
-      - name: Download dpitunnel arm32
-        uses: actions/download-artifact@v8
-        with:
-          name: dpitunnel-arm32
-          path: out/artifacts/dpitunnel/arm32
-      - name: Download torproxy arm32
-        uses: actions/download-artifact@v8
-        with:
-          name: torproxy-arm32
-          path: out/artifacts/torproxy/arm32
-      - name: Download lyrebird arm32
-        uses: actions/download-artifact@v8
-        with:
-          name: lyrebird-arm32
-          path: out/artifacts/lyrebird/arm32
-      - name: Download nfqws arm32
-        uses: actions/download-artifact@v8
-        with:
-          name: nfqws-arm32
-          path: out/artifacts/nfqws/arm32
-      - name: Download nfqws2 arm32
-        uses: actions/download-artifact@v8
-        with:
-          name: nfqws2-arm32
-          path: out/artifacts/nfqws2/arm32
+          pattern: '{zdtd,t2s,d2s,zygisk,openvpn,amneziawg,wireproxy,tun2socks,mihomo,sing-box,hysteria2,byedpi,dnscrypt,mieru,opera-proxy,dpitunnel,torproxy,lyrebird,nfqws,nfqws2}-arm*'
+          path: out/downloaded
+
+      - name: Arrange module binary artifacts
+        run: |
+          set -euo pipefail
+          artifacts=(
+            zdtd t2s d2s zygisk openvpn amneziawg wireproxy tun2socks mihomo
+            sing-box hysteria2 byedpi dnscrypt mieru opera-proxy dpitunnel
+            torproxy lyrebird nfqws nfqws2
+          )
+
+          for arch in arm64 arm32; do
+            for artifact in "${artifacts[@]}"; do
+              source="out/downloaded/${artifact}-${arch}"
+              destination="out/artifacts/${artifact}/${arch}"
+              test -d "$source" || { echo "::error::Downloaded artifact directory missing: $source"; exit 1; }
+              mkdir -p "$destination"
+              cp -a "$source/." "$destination/"
+            done
+          done
+
       - name: Pack Magisk module archive
         run: |
           set -euo pipefail
@@ -5164,6 +4681,7 @@ jobs:
             out/module/zdt_module.zip
             out/module/module.prop
           retention-days: 1
+          compression-level: 0
 
       - name: Upload module component technical assets
         uses: actions/upload-artifact@v7
@@ -5172,6 +4690,7 @@ jobs:
           path: out/technical/module-components/*.zip
           if-no-files-found: error
           retention-days: 1
+          compression-level: 0
 
       - name: Publish archive completion
         continue-on-error: true
@@ -5213,14 +4732,8 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: valnesfjord/tg-ws-proxy-rs
+          ref: ${{ env.TG_WS_PROXY_REF }}
           fetch-depth: 1
-
-      - name: Checkout requested tg-ws-proxy ref
-        run: |
-          set -euo pipefail
-          git fetch --tags --force origin
-          git checkout "$TG_WS_PROXY_REF"
-          git rev-parse --short HEAD
 
       - name: Prepare Android SDK paths
         run: |
@@ -5240,12 +4753,28 @@ jobs:
             echo "ANDROID_HOME=$ANDROID_HOME"
             echo "SDKMANAGER=$SDKMANAGER"
           } >> "$GITHUB_ENV"
-          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi
+
+      - name: Cache Android NDK 27.2
+        uses: actions/cache@v6
+        with:
+          path: /usr/local/lib/android/sdk/ndk/27.2.12479018
+          key: android-ndk-${{ runner.os }}-ubuntu-latest-27.2.12479018-v2
+
+      - name: Cache tg-ws-proxy Cargo dependencies and build outputs
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-tg-ws-proxy-${{ matrix.rust_target }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-tg-ws-proxy-${{ matrix.rust_target }}-
 
       - name: Install Android NDK cross-linker
         run: |
@@ -5254,6 +4783,10 @@ jobs:
           install_sdk_package() {
             local pkg="$1"
             local attempt
+            if [[ "${SDK_LICENSES_ACCEPTED:-false}" != true ]]; then
+              yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+              SDK_LICENSES_ACCEPTED=true
+            fi
             for attempt in 1 2 3 4 5; do
               echo "sdkmanager install $pkg: attempt $attempt/5"
               if "$SDKMANAGER" "$pkg"; then
@@ -5341,6 +4874,7 @@ jobs:
           name: tg-ws-proxy-${{ matrix.artifact_suffix }}
           path: out/tg-ws-proxy/${{ matrix.abi }}/tg-ws-proxy
           retention-days: 1
+          compression-level: 1
 
   package_tg_ws_proxy_asset:
     name: package tg_ws_proxy.zip
@@ -5350,24 +4884,39 @@ jobs:
     if: needs.build_tg_ws_proxy.result == 'success'
 
     steps:
-      - name: Download tg-ws-proxy arm64
+      - name: Download tg-ws-proxy ARM64 binary
         uses: actions/download-artifact@v8
         with:
           name: tg-ws-proxy-arm64
-          path: out/tg-ws-proxy/arm64-v8a
+          path: out/tg-ws-proxy/arm64
 
-      - name: Download tg-ws-proxy arm32
+      - name: Download tg-ws-proxy ARM32 binary
         uses: actions/download-artifact@v8
         with:
           name: tg-ws-proxy-arm32
-          path: out/tg-ws-proxy/armeabi-v7a
+          path: out/tg-ws-proxy/arm32
+
+      - name: Verify downloaded tg-ws-proxy binaries
+        run: |
+          set -euo pipefail
+          for src in \
+            out/tg-ws-proxy/arm64/tg-ws-proxy \
+            out/tg-ws-proxy/arm32/tg-ws-proxy; do
+            if [[ ! -s "$src" ]]; then
+              echo "::error::Downloaded tg-ws-proxy binary is missing or empty: $src"
+              echo "Downloaded files:"
+              find out/tg-ws-proxy -maxdepth 4 -type f -printf '%p (%s bytes)\n' 2>/dev/null || true
+              exit 1
+            fi
+            file "$src"
+          done
 
       - name: Build tg_ws_proxy.zip
         run: |
           set -euo pipefail
           mkdir -p out/technical/tg_ws_proxy/arm64-v8a out/technical/tg_ws_proxy/armeabi-v7a
-          cp -f out/tg-ws-proxy/arm64-v8a/tg-ws-proxy out/technical/tg_ws_proxy/arm64-v8a/tg-ws-proxy
-          cp -f out/tg-ws-proxy/armeabi-v7a/tg-ws-proxy out/technical/tg_ws_proxy/armeabi-v7a/tg-ws-proxy
+          cp -f out/tg-ws-proxy/arm64/tg-ws-proxy out/technical/tg_ws_proxy/arm64-v8a/tg-ws-proxy
+          cp -f out/tg-ws-proxy/arm32/tg-ws-proxy out/technical/tg_ws_proxy/armeabi-v7a/tg-ws-proxy
           chmod 755 out/technical/tg_ws_proxy/arm64-v8a/tg-ws-proxy out/technical/tg_ws_proxy/armeabi-v7a/tg-ws-proxy
           ARM64_SHA="$(sha256sum out/technical/tg_ws_proxy/arm64-v8a/tg-ws-proxy | cut -d ' ' -f1)"
           ARM32_SHA="$(sha256sum out/technical/tg_ws_proxy/armeabi-v7a/tg-ws-proxy | cut -d ' ' -f1)"
@@ -5391,7 +4940,7 @@ jobs:
             }
           }
           EOF_MANIFEST
-          (cd out/technical/tg_ws_proxy && zip -9 -r ../tg_ws_proxy.zip manifest.json arm64-v8a/tg-ws-proxy armeabi-v7a/tg-ws-proxy)
+          (cd out/technical/tg_ws_proxy && zip -1 -r ../tg_ws_proxy.zip manifest.json arm64-v8a/tg-ws-proxy armeabi-v7a/tg-ws-proxy)
           unzip -t out/technical/tg_ws_proxy.zip
           unzip -Z1 out/technical/tg_ws_proxy.zip | grep -Fx 'manifest.json'
           unzip -Z1 out/technical/tg_ws_proxy.zip | grep -Fx 'arm64-v8a/tg-ws-proxy'
@@ -5404,7 +4953,7 @@ jobs:
           name: tg-ws-proxy-technical-asset
           path: out/technical/tg_ws_proxy.zip
           retention-days: 1
-
+          compression-level: 0
 
   build_tgws_plugin_apk:
     name: build TGWS plugin APK
@@ -5414,70 +4963,33 @@ jobs:
     if: needs.build_tg_ws_proxy.result == 'success'
 
     steps:
+      # Checkout must run before downloading artifacts: actions/checkout cleans
+      # untracked workspace files by default and would otherwise delete them.
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Prepare Android SDK paths
-        run: |
-          set -euo pipefail
-          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          ANDROID_HOME="$ANDROID_SDK_ROOT"
-          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
-          fi
-          test -x "$SDKMANAGER" || { echo "::error::sdkmanager not found"; exit 1; }
-          {
-            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-            echo "ANDROID_HOME=$ANDROID_HOME"
-            echo "SDKMANAGER=$SDKMANAGER"
-          } >> "$GITHUB_ENV"
-          yes 2>/dev/null | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
-
-      - name: Install Android SDK packages
-        run: |
-          set -euo pipefail
-          install_sdk_package() {
-            local pkg="$1"
-            for attempt in 1 2 3 4 5; do
-              if "$SDKMANAGER" "$pkg"; then return 0; fi
-              if [[ "$pkg" == platforms\;android-37.* ]]; then
-                "$SDKMANAGER" --channel=3 "$pkg" && return 0 || true
-              fi
-              rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.downloadIntermediates" 2>/dev/null || true
-              sleep $((attempt * 8))
-            done
-            return 1
-          }
-          install_sdk_package "platform-tools"
-          install_sdk_package "platforms;android-${{ env.ANDROID_API_LEVEL }}"
-          install_sdk_package "build-tools;${{ env.ANDROID_BUILD_TOOLS_VERSION }}"
-
-      - name: Setup Gradle ${{ env.GRADLE_VERSION }}
-        uses: gradle/actions/setup-gradle@v6
-        with:
-          gradle-version: ${{ env.GRADLE_VERSION }}
-          cache-read-only: false
-
-      - name: Download tg-ws-proxy arm64
+      - name: Download tg-ws-proxy ARM64 binary
         uses: actions/download-artifact@v8
         with:
           name: tg-ws-proxy-arm64
-          path: out/plugin/tgws/tg-ws-proxy-arm64
+          path: out/plugin/tgws/arm64
 
-      - name: Download tg-ws-proxy arm32
+      - name: Download tg-ws-proxy ARM32 binary
         uses: actions/download-artifact@v8
         with:
           name: tg-ws-proxy-arm32
-          path: out/plugin/tgws/tg-ws-proxy-arm32
+          path: out/plugin/tgws/arm32
+
+      - name: Set up Android build environment
+        uses: ./.github/actions/setup-android-build
+        with:
+          android-api-level: ${{ env.ANDROID_API_LEVEL }}
+          build-tools-version: ${{ env.ANDROID_BUILD_TOOLS_VERSION }}
+          ndk-version: ${{ env.NATIVE_NDK_VERSION }}
+          gradle-version: ${{ env.GRADLE_VERSION }}
+          install-ndk: 'false'
 
       - name: Prepare TGWS plugin native libraries
         run: |
@@ -5485,8 +4997,18 @@ jobs:
           JNI_ROOT="plugin/app/build/generated/tgws-jni/main"
           rm -rf "$JNI_ROOT"
           mkdir -p "$JNI_ROOT/arm64-v8a" "$JNI_ROOT/armeabi-v7a"
-          cp -f out/plugin/tgws/tg-ws-proxy-arm64/tg-ws-proxy "$JNI_ROOT/arm64-v8a/libzdt_tgwsproxy.so"
-          cp -f out/plugin/tgws/tg-ws-proxy-arm32/tg-ws-proxy "$JNI_ROOT/armeabi-v7a/libzdt_tgwsproxy.so"
+          ARM64_SRC="out/plugin/tgws/arm64/tg-ws-proxy"
+          ARM32_SRC="out/plugin/tgws/arm32/tg-ws-proxy"
+          for src in "$ARM64_SRC" "$ARM32_SRC"; do
+            if [[ ! -s "$src" ]]; then
+              echo "::error::Downloaded tg-ws-proxy binary is missing or empty: $src"
+              echo "Downloaded files:"
+              find out/plugin/tgws -maxdepth 4 -type f -printf '%p (%s bytes)\n' 2>/dev/null || true
+              exit 1
+            fi
+          done
+          cp -f "$ARM64_SRC" "$JNI_ROOT/arm64-v8a/libzdt_tgwsproxy.so"
+          cp -f "$ARM32_SRC" "$JNI_ROOT/armeabi-v7a/libzdt_tgwsproxy.so"
           chmod 755 "$JNI_ROOT/arm64-v8a/libzdt_tgwsproxy.so" "$JNI_ROOT/armeabi-v7a/libzdt_tgwsproxy.so"
           file "$JNI_ROOT/arm64-v8a/libzdt_tgwsproxy.so"
           file "$JNI_ROOT/armeabi-v7a/libzdt_tgwsproxy.so"
@@ -5562,7 +5084,7 @@ jobs:
           name: tgws-plugin-technical-assets
           path: out/technical/tgws-plugin/
           retention-days: 1
-
+          compression-level: 0
 
   build_dpi_detector:
     name: build dpi-detector ${{ matrix.abi }}
@@ -5603,43 +5125,41 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Prepare Android SDK paths
-        run: |
-          set -euo pipefail
-          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          ANDROID_HOME="$ANDROID_SDK_ROOT"
-          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
-          fi
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
-            exit 1
-          fi
-          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
-          {
-            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-            echo "ANDROID_HOME=$ANDROID_HOME"
-            echo "SDKMANAGER=$SDKMANAGER"
-            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
-          } >> "$GITHUB_ENV"
-          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+        uses: ./.github/actions/setup-android-sdk
+        with:
+          ndk-version: "27.2.12479018"
 
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi
 
+      - name: Cache shared Cargo registry and git dependencies
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-deps-${{ github.job }}-${{ matrix.rust_target }}-${{ hashFiles('rust/Cargo.lock') }}-v2
+          restore-keys: |
+            cargo-deps-${{ github.job }}-${{ matrix.rust_target }}-
+            cargo-deps-${{ runner.os }}-
+
       - name: Install Android NDK cross-linker
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
-          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          SDK_LICENSES_ACCEPTED=false
           install_sdk_package() {
             local pkg="$1"
             local attempt
+            if [[ "${SDK_LICENSES_ACCEPTED:-false}" != true ]]; then
+              yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+              SDK_LICENSES_ACCEPTED=true
+            fi
             for attempt in 1 2 3 4 5; do
               echo "sdkmanager install $pkg: attempt $attempt/5"
               if "$SDKMANAGER" "$pkg"; then
@@ -5700,10 +5220,7 @@ jobs:
       - name: Cache Cargo registry and dpi-detector target
         uses: actions/cache@v6
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            rust/target
+          path: rust/target
           key: cargo-dpi-detector-${{ matrix.rust_target }}-${{ hashFiles('rust/Cargo.lock', 'rust/dpi-detector/Cargo.toml') }}
           restore-keys: |
             cargo-dpi-detector-${{ matrix.rust_target }}-
@@ -5748,6 +5265,7 @@ jobs:
           name: dpi-detector-${{ matrix.artifact_suffix }}
           path: out/artifacts/dpi-detector/dpi-detector
           retention-days: 1
+          compression-level: 1
 
   build_nfqws_tester:
     name: build nfqws-tester ${{ matrix.abi }}
@@ -5788,43 +5306,41 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Prepare Android SDK paths
-        run: |
-          set -euo pipefail
-          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          ANDROID_HOME="$ANDROID_SDK_ROOT"
-          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
-          fi
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
-            exit 1
-          fi
-          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
-          {
-            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-            echo "ANDROID_HOME=$ANDROID_HOME"
-            echo "SDKMANAGER=$SDKMANAGER"
-            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
-          } >> "$GITHUB_ENV"
-          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+        uses: ./.github/actions/setup-android-sdk
+        with:
+          ndk-version: "27.2.12479018"
 
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi
 
+      - name: Cache shared Cargo registry and git dependencies
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-deps-${{ github.job }}-${{ matrix.rust_target }}-${{ hashFiles('rust/Cargo.lock') }}-v2
+          restore-keys: |
+            cargo-deps-${{ github.job }}-${{ matrix.rust_target }}-
+            cargo-deps-${{ runner.os }}-
+
       - name: Install Android NDK cross-linker
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
-          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          SDK_LICENSES_ACCEPTED=false
           install_sdk_package() {
             local pkg="$1"
             local attempt
+            if [[ "${SDK_LICENSES_ACCEPTED:-false}" != true ]]; then
+              yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+              SDK_LICENSES_ACCEPTED=true
+            fi
             for attempt in 1 2 3 4 5; do
               echo "sdkmanager install $pkg: attempt $attempt/5"
               if "$SDKMANAGER" "$pkg"; then
@@ -5885,10 +5401,7 @@ jobs:
       - name: Cache Cargo registry and nfqws-tester target
         uses: actions/cache@v6
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            rust/target
+          path: rust/target
           key: cargo-nfqws-tester-${{ matrix.rust_target }}-${{ hashFiles('rust/Cargo.lock', 'rust/nfqws-tester/Cargo.toml') }}
           restore-keys: |
             cargo-nfqws-tester-${{ matrix.rust_target }}-
@@ -5933,6 +5446,7 @@ jobs:
           name: nfqws-tester-${{ matrix.artifact_suffix }}
           path: out/artifacts/nfqws-tester/nfqws-tester
           retention-days: 1
+          compression-level: 1
 
   build_hev_socks5_tunnel:
     name: Build hev-socks5-tunnel Android AAR
@@ -5952,24 +5466,18 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Prepare Android NDK
+      - name: Prepare Android SDK paths and NDK
+        uses: ./.github/actions/setup-android-sdk
+        with:
+          ndk-version: "${{ env.NATIVE_NDK_VERSION }}"
+          install-ndk: 'true'
+
+      - name: Configure Android NDK
         run: |
           set -euo pipefail
-          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          ANDROID_HOME="$ANDROID_SDK_ROOT"
-          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
-          fi
-          test -x "$SDKMANAGER" || { echo "::error::sdkmanager not found"; exit 1; }
-          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NATIVE_NDK_VERSION" ]]; then
-            "$SDKMANAGER" "ndk;$NATIVE_NDK_VERSION"
-          fi
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NATIVE_NDK_VERSION"
           test -x "$NDK_ROOT/ndk-build" || { echo "::error::ndk-build not found: $NDK_ROOT"; exit 1; }
           {
-            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-            echo "ANDROID_HOME=$ANDROID_HOME"
             echo "ANDROID_NDK_ROOT=$NDK_ROOT"
             echo "ANDROID_NDK_HOME=$NDK_ROOT"
           } >> "$GITHUB_ENV"
@@ -6022,7 +5530,7 @@ jobs:
           mkdir -p "$AAR_ROOT/assets"
           cp -f "$WORK/jni/LICENSE" "$AAR_ROOT/assets/hev-socks5-tunnel-LICENSE.txt"
 
-          (cd "$AAR_ROOT" && zip -q -9 -r "$OUT" .)
+          (cd "$AAR_ROOT" && zip -q -1 -r "$OUT" .)
           test -s "$OUT"
           unzip -Z1 "$OUT" | grep -Fx 'classes.jar'
           unzip -Z1 "$OUT" | grep -Fx 'jni/arm64-v8a/libhev-socks5-tunnel.so'
@@ -6036,68 +5544,30 @@ jobs:
           name: hev-socks5-tunnel-aar
           path: out/hev/hev-socks5-tunnel.aar
           retention-days: 1
-
-  apk_tools_ready:
-    name: APK support components ready
-    runs-on: ubuntu-latest
-    needs:
-      - build_dpi_detector
-      - build_nfqws_tester
-      - build_hev_socks5_tunnel
-    if: >-
-      needs.build_dpi_detector.result == 'success' &&
-      needs.build_nfqws_tester.result == 'success' &&
-      needs.build_hev_socks5_tunnel.result == 'success'
-
-    steps:
-      - name: Mark APK tools ready
-        run: echo "APK helper artifacts and hev AAR are ready for APK packaging"
-
-  publish_apk_build_start:
-    name: Publish APK build start
-    runs-on: ubuntu-latest
-    needs:
-      - pack_module
-      - apk_tools_ready
-    if: >-
-      needs.pack_module.result == 'success' &&
-      needs.apk_tools_ready.result == 'success'
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-      - name: Publish APK stage
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash scripts/ci/publish-build-status.sh apk running preparing "Building Android application"
+          compression-level: 0
 
   build_apk_variant:
     name: Build ${{ matrix.flavor }} APK
     runs-on: ubuntu-latest
     needs:
       - pack_module
-      - apk_tools_ready
-      - publish_apk_build_start
-    if: >-
-      needs.pack_module.result == 'success' &&
-      needs.apk_tools_ready.result == 'success' &&
-      needs.publish_apk_build_start.result == 'success'
+      - build_dpi_detector
+      - build_nfqws_tester
+      - build_hev_socks5_tunnel
     strategy:
       fail-fast: false
-      max-parallel: 3
+      max-parallel: 2
       matrix:
         include:
           - flavor: bundled
             gradle_task: assembleBundled
           - flavor: online
             gradle_task: assembleOnline
-          - flavor: nonroot
-            gradle_task: assembleNonroot
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Android build environment
         uses: ./.github/actions/setup-android-build
@@ -6114,77 +5584,17 @@ jobs:
           name: zdt-module-zip
           path: out/module
 
-      - name: Download dpi-detector arm64
+      - name: Download root APK helper binaries
         uses: actions/download-artifact@v8
         with:
-          name: dpi-detector-arm64
-          path: out/artifacts/dpi-detector/arm64
-
-      - name: Download dpi-detector arm32
-        uses: actions/download-artifact@v8
-        with:
-          name: dpi-detector-arm32
-          path: out/artifacts/dpi-detector/arm32
-
-      - name: Download nfqws-tester arm64
-        uses: actions/download-artifact@v8
-        with:
-          name: nfqws-tester-arm64
-          path: out/artifacts/nfqws-tester/arm64
-
-      - name: Download nfqws-tester arm32
-        uses: actions/download-artifact@v8
-        with:
-          name: nfqws-tester-arm32
-          path: out/artifacts/nfqws-tester/arm32
+          pattern: '{dpi-detector-arm64,dpi-detector-arm32,nfqws-tester-arm64,nfqws-tester-arm32}'
+          path: out/artifacts/helpers
 
       - name: Download hev-socks5-tunnel AAR
         uses: actions/download-artifact@v8
         with:
           name: hev-socks5-tunnel-aar
           path: out/artifacts/hev
-
-      - name: Download non-root T2S binaries
-        uses: actions/download-artifact@v8
-        with:
-          pattern: t2s-*
-          path: out/artifacts/nonroot/t2s
-
-      - name: Download non-root ByeDPI binaries
-        uses: actions/download-artifact@v8
-        with:
-          pattern: byedpi-*
-          path: out/artifacts/nonroot/byedpi
-
-      - name: Download non-root Opera Proxy binaries
-        uses: actions/download-artifact@v8
-        with:
-          pattern: opera-proxy-*
-          path: out/artifacts/nonroot/opera-proxy
-
-      - name: Download non-root Hysteria2 binaries
-        uses: actions/download-artifact@v8
-        with:
-          pattern: hysteria2-*
-          path: out/artifacts/nonroot/hysteria2
-
-      - name: Download non-root sing-box binaries
-        uses: actions/download-artifact@v8
-        with:
-          pattern: sing-box-*
-          path: out/artifacts/nonroot/sing-box
-
-      - name: Download non-root Mieru binaries
-        uses: actions/download-artifact@v8
-        with:
-          pattern: mieru-*
-          path: out/artifacts/nonroot/mieru
-
-      - name: Download non-root WireProxy binaries
-        uses: actions/download-artifact@v8
-        with:
-          pattern: wireproxy-*
-          path: out/artifacts/nonroot/wireproxy
 
       - name: Prepare hev-socks5-tunnel app library
         run: |
@@ -6199,37 +5609,6 @@ jobs:
           unzip -Z1 "$DST" | grep -Fx 'jni/armeabi-v7a/libhev-socks5-tunnel.so' >/dev/null
           ls -lh "$DST"
 
-      - name: Prepare non-root native executables for APK
-        run: |
-          set -euo pipefail
-          JNI_ROOT="application/app/build/generated/zdt-nonroot-jni/main"
-          rm -rf "$JNI_ROOT"
-          mkdir -p "$JNI_ROOT/arm64-v8a" "$JNI_ROOT/armeabi-v7a"
-
-          copy_helper() {
-            local src="$1"
-            local dst="$2"
-            test -s "$src" || { echo "::error::non-root native artifact missing: $src"; exit 1; }
-            cp -f "$src" "$dst"
-            chmod 755 "$dst"
-            file "$dst"
-          }
-
-          copy_helper "out/artifacts/nonroot/t2s/t2s-arm64/t2s" "$JNI_ROOT/arm64-v8a/libzdt_t2s.so"
-          copy_helper "out/artifacts/nonroot/t2s/t2s-arm32/t2s" "$JNI_ROOT/armeabi-v7a/libzdt_t2s.so"
-          copy_helper "out/artifacts/nonroot/byedpi/byedpi-arm64/byedpi" "$JNI_ROOT/arm64-v8a/libzdt_byedpi.so"
-          copy_helper "out/artifacts/nonroot/byedpi/byedpi-arm32/byedpi" "$JNI_ROOT/armeabi-v7a/libzdt_byedpi.so"
-          copy_helper "out/artifacts/nonroot/opera-proxy/opera-proxy-arm64/opera-proxy" "$JNI_ROOT/arm64-v8a/libzdt_operaproxy.so"
-          copy_helper "out/artifacts/nonroot/opera-proxy/opera-proxy-arm32/opera-proxy" "$JNI_ROOT/armeabi-v7a/libzdt_operaproxy.so"
-          copy_helper "out/artifacts/nonroot/hysteria2/hysteria2-arm64/hysteria2" "$JNI_ROOT/arm64-v8a/libzdt_hysteria2.so"
-          copy_helper "out/artifacts/nonroot/hysteria2/hysteria2-arm32/hysteria2" "$JNI_ROOT/armeabi-v7a/libzdt_hysteria2.so"
-          copy_helper "out/artifacts/nonroot/sing-box/sing-box-arm64/sing-box" "$JNI_ROOT/arm64-v8a/libzdt_singbox.so"
-          copy_helper "out/artifacts/nonroot/sing-box/sing-box-arm32/sing-box" "$JNI_ROOT/armeabi-v7a/libzdt_singbox.so"
-          copy_helper "out/artifacts/nonroot/mieru/mieru-arm64/mieru" "$JNI_ROOT/arm64-v8a/libzdt_mieru.so"
-          copy_helper "out/artifacts/nonroot/mieru/mieru-arm32/mieru" "$JNI_ROOT/armeabi-v7a/libzdt_mieru.so"
-          copy_helper "out/artifacts/nonroot/wireproxy/wireproxy-arm64/wireproxy" "$JNI_ROOT/arm64-v8a/libzdt_wireproxy.so"
-          copy_helper "out/artifacts/nonroot/wireproxy/wireproxy-arm32/wireproxy" "$JNI_ROOT/armeabi-v7a/libzdt_wireproxy.so"
-
       - name: Locate Android project root
         run: |
           SETTINGS=$(find . -maxdepth 4 \( -name 'settings.gradle' -o -name 'settings.gradle.kts' \) \
@@ -6242,7 +5621,9 @@ jobs:
           GRADLE_PROJECT_DIR=$(dirname "$SETTINGS")
           echo "GRADLE_PROJECT_DIR=$GRADLE_PROJECT_DIR" >> $GITHUB_ENV
           echo "Android project root: $GRADLE_PROJECT_DIR"
-          test -s out/module/zdt_module.zip || { echo "::error::Downloaded module zip is missing"; exit 1; }
+          if [[ "${{ matrix.flavor }}" != "nonroot" ]]; then
+            test -s out/module/zdt_module.zip || { echo "::error::Downloaded module zip is missing"; exit 1; }
+          fi
 
       - name: Write local.properties & restore signing keystore
         env:
@@ -6285,8 +5666,8 @@ jobs:
         run: |
           set -euo pipefail
           declare -A SRC_BY_ABI=(
-            [arm64-v8a]="out/artifacts/dpi-detector/arm64/dpi-detector"
-            [armeabi-v7a]="out/artifacts/dpi-detector/arm32/dpi-detector"
+            [arm64-v8a]="out/artifacts/helpers/dpi-detector-arm64/dpi-detector"
+            [armeabi-v7a]="out/artifacts/helpers/dpi-detector-arm32/dpi-detector"
           )
           for abi in arm64-v8a armeabi-v7a; do
             SRC="${SRC_BY_ABI[$abi]}"
@@ -6302,8 +5683,8 @@ jobs:
         run: |
           set -euo pipefail
           declare -A SRC_BY_ABI=(
-            [arm64-v8a]="out/artifacts/nfqws-tester/arm64/nfqws-tester"
-            [armeabi-v7a]="out/artifacts/nfqws-tester/arm32/nfqws-tester"
+            [arm64-v8a]="out/artifacts/helpers/nfqws-tester-arm64/nfqws-tester"
+            [armeabi-v7a]="out/artifacts/helpers/nfqws-tester-arm32/nfqws-tester"
           )
           for abi in arm64-v8a armeabi-v7a; do
             SRC="${SRC_BY_ABI[$abi]}"
@@ -6350,24 +5731,199 @@ jobs:
           path: out/apk/app-release.apk
           if-no-files-found: error
           retention-days: 1
+          compression-level: 0
+
+  build_apk_nonroot:
+    name: Build non-root APK
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      statuses: write
+    needs:
+      - build_hev_socks5_tunnel
+      - build_t2s
+      - build_byedpi
+      - build_operaproxy
+      - build_hysteria2
+      - build_singbox
+      - build_mieru
+      - build_wireproxy
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Publish APK stage
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/publish-build-status.sh apk running preparing "Building Android application"
+
+      - name: Set up Android build environment
+        uses: ./.github/actions/setup-android-build
+        with:
+          android-api-level: ${{ env.ANDROID_API_LEVEL }}
+          build-tools-version: ${{ env.ANDROID_BUILD_TOOLS_VERSION }}
+          ndk-version: ${{ env.NATIVE_NDK_VERSION }}
+          gradle-version: ${{ env.GRADLE_VERSION }}
+          install-ndk: 'true'
+
+      - name: Download hev-socks5-tunnel AAR
+        uses: actions/download-artifact@v8
+        with:
+          name: hev-socks5-tunnel-aar
+          path: out/artifacts/hev
+
+      - name: Download non-root native binaries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: '{t2s-arm*,byedpi-arm*,opera-proxy-arm*,hysteria2-arm*,sing-box-arm*,mieru-arm*,wireproxy-arm*}'
+          path: out/artifacts/nonroot
+
+      - name: Prepare hev-socks5-tunnel app library
+        run: |
+          set -euo pipefail
+          SRC="out/artifacts/hev/hev-socks5-tunnel.aar"
+          DST="application/app/libs/hev-socks5-tunnel.aar"
+          test -s "$SRC" || { echo "::error::hev AAR artifact missing: $SRC"; exit 1; }
+          mkdir -p "$(dirname "$DST")"
+          cp -f "$SRC" "$DST"
+          unzip -Z1 "$DST" | grep -Fx 'classes.jar' >/dev/null
+          unzip -Z1 "$DST" | grep -Fx 'jni/arm64-v8a/libhev-socks5-tunnel.so' >/dev/null
+          unzip -Z1 "$DST" | grep -Fx 'jni/armeabi-v7a/libhev-socks5-tunnel.so' >/dev/null
+          ls -lh "$DST"
+
+      - name: Prepare non-root native executables for APK
+        run: |
+          set -euo pipefail
+          JNI_ROOT="application/app/build/generated/zdt-nonroot-jni/main"
+          rm -rf "$JNI_ROOT"
+          mkdir -p "$JNI_ROOT/arm64-v8a" "$JNI_ROOT/armeabi-v7a"
+
+          copy_helper() {
+            local src="$1"
+            local dst="$2"
+            test -s "$src" || { echo "::error::non-root native artifact missing: $src"; exit 1; }
+            cp -f "$src" "$dst"
+            chmod 755 "$dst"
+            file "$dst"
+          }
+
+          copy_helper "out/artifacts/nonroot/t2s-arm64/t2s" "$JNI_ROOT/arm64-v8a/libzdt_t2s.so"
+          copy_helper "out/artifacts/nonroot/t2s-arm32/t2s" "$JNI_ROOT/armeabi-v7a/libzdt_t2s.so"
+          copy_helper "out/artifacts/nonroot/byedpi-arm64/byedpi" "$JNI_ROOT/arm64-v8a/libzdt_byedpi.so"
+          copy_helper "out/artifacts/nonroot/byedpi-arm32/byedpi" "$JNI_ROOT/armeabi-v7a/libzdt_byedpi.so"
+          copy_helper "out/artifacts/nonroot/opera-proxy-arm64/opera-proxy" "$JNI_ROOT/arm64-v8a/libzdt_operaproxy.so"
+          copy_helper "out/artifacts/nonroot/opera-proxy-arm32/opera-proxy" "$JNI_ROOT/armeabi-v7a/libzdt_operaproxy.so"
+          copy_helper "out/artifacts/nonroot/hysteria2-arm64/hysteria2" "$JNI_ROOT/arm64-v8a/libzdt_hysteria2.so"
+          copy_helper "out/artifacts/nonroot/hysteria2-arm32/hysteria2" "$JNI_ROOT/armeabi-v7a/libzdt_hysteria2.so"
+          copy_helper "out/artifacts/nonroot/sing-box-arm64/sing-box" "$JNI_ROOT/arm64-v8a/libzdt_singbox.so"
+          copy_helper "out/artifacts/nonroot/sing-box-arm32/sing-box" "$JNI_ROOT/armeabi-v7a/libzdt_singbox.so"
+          copy_helper "out/artifacts/nonroot/mieru-arm64/mieru" "$JNI_ROOT/arm64-v8a/libzdt_mieru.so"
+          copy_helper "out/artifacts/nonroot/mieru-arm32/mieru" "$JNI_ROOT/armeabi-v7a/libzdt_mieru.so"
+          copy_helper "out/artifacts/nonroot/wireproxy-arm64/wireproxy" "$JNI_ROOT/arm64-v8a/libzdt_wireproxy.so"
+          copy_helper "out/artifacts/nonroot/wireproxy-arm32/wireproxy" "$JNI_ROOT/armeabi-v7a/libzdt_wireproxy.so"
+
+      - name: Locate Android project root
+        run: |
+          SETTINGS=$(find . -maxdepth 4 \( -name 'settings.gradle' -o -name 'settings.gradle.kts' \) \
+            | grep -v '/build/' | sort | head -1)
+          if [[ -z "$SETTINGS" ]]; then
+            echo "::error::settings.gradle dont found:"
+            find . -maxdepth 4 -name '*.gradle*' | sort
+            exit 1
+          fi
+          GRADLE_PROJECT_DIR=$(dirname "$SETTINGS")
+          echo "GRADLE_PROJECT_DIR=$GRADLE_PROJECT_DIR" >> $GITHUB_ENV
+          echo "Android project root: $GRADLE_PROJECT_DIR"
+
+      - name: Write local.properties & restore signing keystore
+        env:
+          ZDT_KEYSTORE_BASE64: ${{ secrets.ZDT_KEYSTORE_BASE64 }}
+          ZDT_KEYSTORE_PASSWORD: ${{ secrets.ZDT_KEYSTORE_PASSWORD }}
+          ZDT_KEY_ALIAS: ${{ secrets.ZDT_KEY_ALIAS }}
+          ZDT_KEY_PASSWORD: ${{ secrets.ZDT_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > "$GRADLE_PROJECT_DIR/local.properties"
+
+          for name in ZDT_KEYSTORE_BASE64 ZDT_KEYSTORE_PASSWORD ZDT_KEY_ALIAS ZDT_KEY_PASSWORD; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::$name GitHub Actions secret is missing or empty"
+              exit 1
+            fi
+          done
+
+          KEYSTORE_PATH="$(pwd)/keystores/zdt-debug.keystore"
+          mkdir -p "$(dirname "$KEYSTORE_PATH")"
+
+          printf '%s' "$ZDT_KEYSTORE_BASE64" | base64 -d > "$KEYSTORE_PATH"
+          chmod 600 "$KEYSTORE_PATH"
+
+          keytool -list \
+            -keystore "$KEYSTORE_PATH" \
+            -storepass "$ZDT_KEYSTORE_PASSWORD" \
+            -alias "$ZDT_KEY_ALIAS" \
+            >/dev/null
+
+          {
+            echo "storeFile=$KEYSTORE_PATH"
+            echo "storePassword=$ZDT_KEYSTORE_PASSWORD"
+            echo "keyAlias=$ZDT_KEY_ALIAS"
+            echo "keyPassword=$ZDT_KEY_PASSWORD"
+          } > "$GRADLE_PROJECT_DIR/keystore.properties"
+
+      - name: Build nonroot APK
+        working-directory: ${{ env.GRADLE_PROJECT_DIR }}
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
+        run: |
+          set -euo pipefail
+          GRADLE_ARGS=(
+            --no-daemon
+            --no-parallel
+            --max-workers=2
+            "-PzdtCompileSdk=${{ env.ZDT_COMPILE_SDK }}"
+            "-PzdtCompileSdkMinor=${{ env.ZDT_COMPILE_SDK_MINOR }}"
+            "-PzdtRequireHevAar=true"
+          )
+          gradle "${GRADLE_ARGS[@]}" "assembleNonroot${{ env.BUILD_TYPE }}"
+
+      - name: Collect APK variant
+        run: |
+          set -euo pipefail
+          BUILD_TYPE_LOWER="$(printf '%s' "$BUILD_TYPE" | tr '[:upper:]' '[:lower:]')"
+          APK="$(find "$GRADLE_PROJECT_DIR" -path "*/build/outputs/apk/nonroot/${BUILD_TYPE_LOWER}/*.apk" -type f | sort | tail -1)"
+          test -s "$APK" || { echo "::error::Expected APK for flavor nonroot was not produced"; exit 1; }
+          unzip -Z1 "$APK" | grep -Fx 'AndroidManifest.xml' >/dev/null || { echo "::error::Invalid APK: $APK"; exit 1; }
+          mkdir -p out/apk
+          cp -f "$APK" out/apk/app-release.apk
+          ls -lh out/apk/app-release.apk
+
+      - name: Upload APK variant
+        uses: actions/upload-artifact@v7
+        with:
+          name: zdt-apk-nonroot
+          path: out/apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
 
   build_apk:
     name: Assemble and validate APK artifacts
     runs-on: ubuntu-latest
     needs:
       - pack_module
-      - apk_tools_ready
       - build_apk_variant
-    if: >-
-      always() &&
-      needs.pack_module.result == 'success' &&
-      needs.apk_tools_ready.result == 'success' &&
-      needs.build_apk_variant.result == 'success'
+      - build_apk_nonroot
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Android validation environment
         uses: ./.github/actions/setup-android-build
@@ -6377,24 +5933,15 @@ jobs:
           ndk-version: ${{ env.NATIVE_NDK_VERSION }}
           gradle-version: ${{ env.GRADLE_VERSION }}
           install-ndk: 'false'
+          install-platform: 'false'
+          setup-gradle: 'false'
+          setup-jdk: 'false'
 
-      - name: Download bundled APK
+      - name: Download all APK variants
         uses: actions/download-artifact@v8
         with:
-          name: zdt-apk-bundled
-          path: out/apks/bundled
-
-      - name: Download online APK
-        uses: actions/download-artifact@v8
-        with:
-          name: zdt-apk-online
-          path: out/apks/online
-
-      - name: Download non-root APK
-        uses: actions/download-artifact@v8
-        with:
-          name: zdt-apk-nonroot
-          path: out/apks/nonroot
+          pattern: 'zdt-apk-*'
+          path: out/apks
 
       - name: Download module archive
         uses: actions/download-artifact@v8
@@ -6407,9 +5954,9 @@ jobs:
           set -euo pipefail
           mkdir -p out/dist
 
-          BUNDLED_APK="out/apks/bundled/app-release.apk"
-          ONLINE_APK="out/apks/online/app-release.apk"
-          NONROOT_APK="out/apks/nonroot/app-release.apk"
+          BUNDLED_APK="out/apks/zdt-apk-bundled/app-release.apk"
+          ONLINE_APK="out/apks/zdt-apk-online/app-release.apk"
+          NONROOT_APK="out/apks/zdt-apk-nonroot/app-release.apk"
           for apk in "$BUNDLED_APK" "$ONLINE_APK" "$NONROOT_APK"; do
             test -s "$apk" || { echo "::error::Expected APK does not exist: $apk"; exit 1; }
             unzip -Z1 "$apk" | grep -Fx 'AndroidManifest.xml' >/dev/null || { echo "::error::Invalid APK: $apk"; exit 1; }
@@ -6609,6 +6156,7 @@ jobs:
             out/dist/app-release-nonroot.apk
           if-no-files-found: error
           retention-days: 30
+          compression-level: 0
 
       - name: Upload module artifact
         uses: actions/upload-artifact@v7
@@ -6617,6 +6165,7 @@ jobs:
           path: out/dist/zdt_module.zip
           if-no-files-found: error
           retention-days: 30
+          compression-level: 0
 
       - name: Publish APK completion
         continue-on-error: true
@@ -6627,6 +6176,10 @@ jobs:
   publish_service:
     name: Publish service build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      statuses: write
+      copilot-requests: write
     needs:
       - build_gate
       - build_apk
@@ -7439,15 +6992,37 @@ jobs:
   publish_build_status_failure:
     name: Publish failed build status
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      statuses: write
     needs:
       - build_gate
-      - module_core_ready
-      - module_binaries_ready
-      - module_zygisk_ready
+      - build_zdtd
+      - build_t2s
+      - build_d2s
+      - build_openvpn
+      - build_amneziawg
+      - build_wireproxy
+      - build_tun2socks
+      - build_mihomo
+      - build_singbox
+      - build_hysteria2
+      - build_byedpi
+      - build_dnscrypt
+      - build_mieru
+      - build_operaproxy
+      - build_dpitunnel
+      - build_torproxy
+      - build_lyrebird
+      - build_nfqws
+      - build_nfqws2
+      - build_zygisk
       - pack_module
-      - apk_tools_ready
-      - publish_apk_build_start
+      - build_dpi_detector
+      - build_nfqws_tester
+      - build_hev_socks5_tunnel
       - build_apk_variant
+      - build_apk_nonroot
       - build_apk
       - build_tgws_plugin_apk
       - publish_service
@@ -7455,16 +7030,37 @@ jobs:
       always() &&
       github.ref == 'refs/heads/main' &&
       needs.build_gate.outputs.should_build == 'true' &&
-      (needs.module_core_ready.result != 'success' ||
-       needs.module_binaries_ready.result != 'success' ||
-       needs.module_zygisk_ready.result != 'success' ||
+      (
+       needs.build_zdtd.result != 'success' ||
+       needs.build_t2s.result != 'success' ||
+       needs.build_d2s.result != 'success' ||
+       needs.build_openvpn.result != 'success' ||
+       needs.build_amneziawg.result != 'success' ||
+       needs.build_wireproxy.result != 'success' ||
+       needs.build_tun2socks.result != 'success' ||
+       needs.build_mihomo.result != 'success' ||
+       needs.build_singbox.result != 'success' ||
+       needs.build_hysteria2.result != 'success' ||
+       needs.build_byedpi.result != 'success' ||
+       needs.build_dnscrypt.result != 'success' ||
+       needs.build_mieru.result != 'success' ||
+       needs.build_operaproxy.result != 'success' ||
+       needs.build_dpitunnel.result != 'success' ||
+       needs.build_torproxy.result != 'success' ||
+       needs.build_lyrebird.result != 'success' ||
+       needs.build_nfqws.result != 'success' ||
+       needs.build_nfqws2.result != 'success' ||
+       needs.build_zygisk.result != 'success' ||
        needs.pack_module.result != 'success' ||
-       needs.apk_tools_ready.result != 'success' ||
-       needs.publish_apk_build_start.result != 'success' ||
+       needs.build_dpi_detector.result != 'success' ||
+       needs.build_nfqws_tester.result != 'success' ||
+       needs.build_hev_socks5_tunnel.result != 'success' ||
        needs.build_apk_variant.result != 'success' ||
+       needs.build_apk_nonroot.result != 'success' ||
        needs.build_apk.result != 'success' ||
        needs.build_tgws_plugin_apk.result != 'success' ||
-       needs.publish_service.result != 'success')
+       needs.publish_service.result != 'success'
+      )
 
     steps:
       - name: Checkout repository
@@ -7473,11 +7069,11 @@ jobs:
       - name: Determine failed stage
         id: failed_stage
         env:
-          CORE_RESULT: ${{ needs.module_core_ready.result }}
-          BINARIES_RESULT: ${{ needs.module_binaries_ready.result }}
-          ZYGISK_RESULT: ${{ needs.module_zygisk_ready.result }}
+          CORE_RESULT: ${{ (needs.build_zdtd.result == 'success' && needs.build_t2s.result == 'success' && needs.build_d2s.result == 'success') && 'success' || 'failure' }}
+          BINARIES_RESULT: ${{ (needs.build_openvpn.result == 'success' && needs.build_amneziawg.result == 'success' && needs.build_wireproxy.result == 'success' && needs.build_tun2socks.result == 'success' && needs.build_mihomo.result == 'success' && needs.build_singbox.result == 'success' && needs.build_hysteria2.result == 'success' && needs.build_byedpi.result == 'success' && needs.build_dnscrypt.result == 'success' && needs.build_mieru.result == 'success' && needs.build_operaproxy.result == 'success' && needs.build_dpitunnel.result == 'success' && needs.build_torproxy.result == 'success' && needs.build_lyrebird.result == 'success' && needs.build_nfqws.result == 'success' && needs.build_nfqws2.result == 'success') && 'success' || 'failure' }}
+          ZYGISK_RESULT: ${{ needs.build_zygisk.result }}
           PACK_RESULT: ${{ needs.pack_module.result }}
-          APK_TOOLS_RESULT: ${{ needs.apk_tools_ready.result }}
+          APK_TOOLS_RESULT: ${{ (needs.build_dpi_detector.result == 'success' && needs.build_nfqws_tester.result == 'success' && needs.build_hev_socks5_tunnel.result == 'success') && 'success' || 'failure' }}
           APK_RESULT: ${{ needs.build_apk.result }}
           TGWS_PLUGIN_RESULT: ${{ needs.build_tgws_plugin_apk.result }}
           RELEASE_RESULT: ${{ needs.publish_service.result }}
